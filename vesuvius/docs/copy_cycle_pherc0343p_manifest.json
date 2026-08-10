@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-08-11T00:00:00Z",
+  "scroll_id": "PHerc0343P",
+  "native_voxel_size_um": 2.215,
+  "volume_scale": 1,
+  "effective_model_voxel_size_um": 4.43,
+  "volume_url": "https://vesuvius-challenge-open-data.s3.amazonaws.com/PHerc0343P/volumes/20260304131111-2.215um-0.4m-111keV-masked.zarr/",
+  "bucket_base_url": "https://vesuvius-challenge-open-data.s3.amazonaws.com",
+  "expected_wraps": [1, 2, 3, 4, 5, 6, 7, 8],
+  "sealed_test_edges": [[2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8]],
+  "excluded_wraps": [1],
+  "wraps": [
+    {
+      "wrap": 1,
+      "local_dir": "m6",
+      "sequence_label": null,
+      "included_in_test": false,
+      "exclusion_reason": "Legacy generic tifxyz segment is spatially disjoint from the explicit -5..1 b2 sequence.",
+      "segment_id": "20250511003658-tifxyz",
+      "tifxyz_dir": "mesh/20250511003658-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 416, "sha256": "fbd88fe37efddc7a5ad14a6f3dece550d7b639849743e61d2eeb0be411b8e162"},
+        "x.tif": {"bytes": 1076418, "sha256": "8dd93dbbe917c6854c00ae5dc9af43e8e3e96c380cb7f10475fac694bcc88c14"},
+        "y.tif": {"bytes": 1076418, "sha256": "676bf61a171b8fa7f001f26a331d5e05a14d83d95e1a69b3272fcad2156ae73c"},
+        "z.tif": {"bytes": 1076418, "sha256": "6a4fd2f29c66bf6b53ed7ef367803bf55d91a7d0035f6e835c7ae66cc522f3ae"}
+      }
+    },
+    {
+      "wrap": 2,
+      "local_dir": "m5",
+      "sequence_label": -5,
+      "included_in_test": true,
+      "segment_id": "20250902170435--5_b2",
+      "tifxyz_dir": "mesh/20250902170435-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 412, "sha256": "d780856a62e715a0615881f6f6010cac206eba1afc0e0d524988dc9397ded6d5"},
+        "x.tif": {"bytes": 1208454, "sha256": "f420cdd19eda8c5915ff479a8d927a754d17fdd3179da277b999c2420159b518"},
+        "y.tif": {"bytes": 1208454, "sha256": "07ad5ae69129147e445b6dba5796f1d479d2de2543c5c5d28b96bdc76c82cc89"},
+        "z.tif": {"bytes": 1208454, "sha256": "8c3c140e57c6e7cb0dcb51051258db3523d2789890958338de75c9ddc6536e46"}
+      }
+    },
+    {
+      "wrap": 3,
+      "local_dir": "m4",
+      "sequence_label": -4,
+      "included_in_test": true,
+      "segment_id": "20250902170441--4_b2",
+      "tifxyz_dir": "mesh/20250902170441-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 411, "sha256": "d0d275a0325232b5c2be4e09a20027859e7ce4c8f56e0ff88ecca80e32bf6319"},
+        "x.tif": {"bytes": 1264950, "sha256": "546d96f695d63e52ebcdf8430a58ec56aabbf6405c78a1dbfae5f6a4b4b85bcb"},
+        "y.tif": {"bytes": 1264950, "sha256": "ca8e76276e20432ce296d41acc9d5982f2b01b3e347645be79166444ed2453e6"},
+        "z.tif": {"bytes": 1264950, "sha256": "d14a018f783693cb0875cccac83c1426dbcf97e76e0a5a8cdba19d8a928738e3"}
+      }
+    },
+    {
+      "wrap": 4,
+      "local_dir": "m3",
+      "sequence_label": -3,
+      "included_in_test": true,
+      "segment_id": "20250902170447--3_b2",
+      "tifxyz_dir": "mesh/20250902170447-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 415, "sha256": "82e9b4db50c729a922c39df4c862f27c6d18d0b1854c583877f6f34405960820"},
+        "x.tif": {"bytes": 1407566, "sha256": "1b5216fe27abbe53d6af378341cfd8c2542c4e1e32b04557e837691ed7b67a8b"},
+        "y.tif": {"bytes": 1407566, "sha256": "4a1150f01127dc2e6ff1b50a93181a083ea2053cb12352c5fd2122528e183543"},
+        "z.tif": {"bytes": 1407566, "sha256": "d756886324f61d844625eb2846c74f03482616f91dde0f48f534e4b66fb33cd4"}
+      }
+    },
+    {
+      "wrap": 5,
+      "local_dir": "m2",
+      "sequence_label": -2,
+      "included_in_test": true,
+      "segment_id": "20250902171202--2_b2",
+      "tifxyz_dir": "mesh/20250902171202-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 421, "sha256": "594074579fe6d6d6444e2de662564d930c7f27ca39edadda10830e761ee7816d"},
+        "x.tif": {"bytes": 1213302, "sha256": "3d627f4b267bb56dd5336ed1f21da138c3b3e14a970aa8005c39a38f34961a33"},
+        "y.tif": {"bytes": 1213302, "sha256": "1412fe175192914ec55eea2f63541ad8ac42f00b2ef493d16d3a3bc16921f7e4"},
+        "z.tif": {"bytes": 1213302, "sha256": "3fb966053082246ec3630009beba4701bee970057853f9b4a5c216a0874be8cb"}
+      }
+    },
+    {
+      "wrap": 6,
+      "local_dir": "m1",
+      "sequence_label": -1,
+      "included_in_test": true,
+      "segment_id": "20250902171204--1_b2",
+      "tifxyz_dir": "mesh/20250902171204-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 412, "sha256": "95b7f2b6ced2bc10d6f5137a0262e3812919361d43663242e0e899284a068630"},
+        "x.tif": {"bytes": 1189382, "sha256": "ca3c6dc36f6049fdb9e7e70d6d2dd066a00cfa4bbd1b04bdf3ad8a43efbacee6"},
+        "y.tif": {"bytes": 1189382, "sha256": "37178104f7a4f759eb1b7b7427b436303762f988a8cf064a12799f3e2d47d578"},
+        "z.tif": {"bytes": 1189382, "sha256": "15c338b61478ffa99b6c94261008128f04c2095b7be91105be8e338ffc5f8019"}
+      }
+    },
+    {
+      "wrap": 7,
+      "local_dir": "p0",
+      "sequence_label": 0,
+      "included_in_test": true,
+      "segment_id": "20250904233748-0_b2",
+      "tifxyz_dir": "mesh/20250904233748-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 417, "sha256": "06446d09f5d280ad72c39c3b7a4702104cf979fe7051ccc7c07d6d7d6db1e6e9"},
+        "x.tif": {"bytes": 1375422, "sha256": "2da7fee6cc04de0b59071ef91c6f42e3b8851e6d350ac9a88c34a764fab3e455"},
+        "y.tif": {"bytes": 1375422, "sha256": "d93d749a9772b75bd348befdd0214b9903bdab439d47da6732c1806b5b5eb521"},
+        "z.tif": {"bytes": 1375422, "sha256": "9a748aa35493bcc31a7468d1bddd2d559acef5d524b9060872189c18a6ef122f"}
+      }
+    },
+    {
+      "wrap": 8,
+      "local_dir": "p1",
+      "sequence_label": 1,
+      "included_in_test": true,
+      "segment_id": "20250905172054-1_b2",
+      "tifxyz_dir": "mesh/20250905172054-on-20260304131111-2.215um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 419, "sha256": "d991019d0f53161f4cc090e67a8c89904669ec79693b6d2f003b3534f7be3083"},
+        "x.tif": {"bytes": 1046198, "sha256": "6d36e58632b98029c6aeff6bdd34ae7a4c9b4d3253c021b97660e2028053b788"},
+        "y.tif": {"bytes": 1046198, "sha256": "77b0fc437fc134f4136952147fe89f5fdd63af258f952d7c6c8d58e791e7bf9b"},
+        "z.tif": {"bytes": 1046198, "sha256": "2941fb9fe32c56e21caae3c1732e2b422eba79e95735e7178804e1f00b47300a"}
+      }
+    }
+  ]
+}

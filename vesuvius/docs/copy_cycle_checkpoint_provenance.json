@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "recorded_utc": "2026-08-11T00:00:00Z",
+  "huggingface_repo": "scrollprize/copy_displacement_latest",
+  "huggingface_revision": "4da532350f40d84347991731fc25124fc07afbc1",
+  "huggingface_last_modified": "2026-07-01T20:28:03Z",
+  "filename": "copy_displacement_latest.pth",
+  "bytes": 1698235447,
+  "sha256": "22cf4392f2f61e6a5548c7b68148e97fed4ee772abf4f842cc6b8d1ef3ca1370",
+  "checkpoint_step": 332500,
+  "wandb_run_id": "1fpwzx9i",
+  "training_mode": "copy_neighbors",
+  "training_resolution_um_from_model_card": 4.8,
+  "in_channels": 8,
+  "output_displacement_channels": 6,
+  "crop_size": [128, 384, 384],
+  "mixed_precision": "bf16",
+  "seed": 10,
+  "training_datasets_from_embedded_config": [
+    {
+      "name": "PHerc0139",
+      "volume": "20260102150214-2.399um-0.2m-78keV-masked.zarr",
+      "volume_scale": 1
+    },
+    {
+      "name": "PHerc1667",
+      "volume": "1667.zarr",
+      "volume_scale": 1
+    },
+    {
+      "name": "PHerc0500P2",
+      "volume": "20250526151718-2.215um-0.4m-111keV-masked.zarr",
+      "volume_scale": 1
+    },
+    {
+      "name": "PHercMANBp",
+      "volume": "20251216152116-2.399um-0.2m-78keV-masked.zarr",
+      "volume_scale": 1
+    },
+    {
+      "name": "PHercParis4",
+      "volume": "20260411134726-2.400um-0.2m-78keV-masked.zarr",
+      "volume_scale": 1
+    }
+  ],
+  "not_listed_in_training_config": ["PHerc0343P"],
+  "inspection_method": "torch.load(..., map_location='cpu', weights_only=True, mmap=True); no model forward pass"
+}

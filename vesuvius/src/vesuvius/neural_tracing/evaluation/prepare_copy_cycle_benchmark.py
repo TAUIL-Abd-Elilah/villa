@@ -1,4 +1,4 @@
-"""Download and verify the preregistered PHerc0500P2 copy-cycle benchmark."""
+"""Download and verify a preregistered copy-cycle benchmark manifest."""
 
 from __future__ import annotations
 
@@ -42,6 +42,16 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     bucket_base = str(manifest.get("bucket_base_url", "")).rstrip("/")
     if not bucket_base.startswith("https://"):
         raise ValueError("bucket_base_url must be an https URL")
+    scroll_id = _require_safe_relative_path(manifest.get("scroll_id"), "scroll_id")
+    if "/" in scroll_id:
+        raise ValueError("scroll_id must have one path component")
+
+    expected_wraps_raw = manifest.get("expected_wraps")
+    if not isinstance(expected_wraps_raw, list) or not expected_wraps_raw:
+        raise ValueError("expected_wraps must be a non-empty list")
+    expected_wraps = {int(value) for value in expected_wraps_raw}
+    if len(expected_wraps) != len(expected_wraps_raw) or min(expected_wraps) < 1:
+        raise ValueError("expected_wraps must contain unique positive integers")
 
     wraps = manifest.get("wraps")
     if not isinstance(wraps, list) or not wraps:
@@ -61,6 +71,11 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
         if "/" in segment_id:
             raise ValueError(f"wrap {wrap} segment_id must have one path component")
         tifxyz_dir = _require_safe_relative_path(entry.get("tifxyz_dir"), f"wrap {wrap} tifxyz_dir")
+        local_dir = _require_safe_relative_path(
+            entry.get("local_dir", f"wrap{wrap:02d}"), f"wrap {wrap} local_dir"
+        )
+        if "/" in local_dir:
+            raise ValueError(f"wrap {wrap} local_dir must have one path component")
 
         files = entry.get("files")
         if not isinstance(files, dict) or tuple(sorted(files)) != tuple(sorted(_EXPECTED_FILES)):
@@ -75,13 +90,16 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
                 raise ValueError(f"wrap {wrap} {filename} byte count must be positive")
             if len(sha256) != 64 or any(char not in "0123456789abcdef" for char in sha256):
                 raise ValueError(f"wrap {wrap} {filename} has an invalid SHA-256")
-            remote_path = f"PHerc0500P2/segments/{segment_id}/{tifxyz_dir}/{filename}"
+            remote_path = f"{scroll_id}/segments/{segment_id}/{tifxyz_dir}/{filename}"
             if remote_path in seen_remote_paths:
                 raise ValueError(f"duplicate remote path in manifest: {remote_path}")
             seen_remote_paths.add(remote_path)
 
-    if seen_wraps != set(range(1, 14)):
-        raise ValueError(f"PHerc0500P2 benchmark must contain wraps 1..13, got {sorted(seen_wraps)}")
+    if seen_wraps != expected_wraps:
+        raise ValueError(
+            f"benchmark wraps must equal expected_wraps={sorted(expected_wraps)}, "
+            f"got {sorted(seen_wraps)}"
+        )
     return manifest
 
 
@@ -97,12 +115,13 @@ def iter_manifest_files(
     manifest: dict[str, Any], destination: Path
 ) -> Iterable[tuple[int, str, Path, int, str]]:
     base_url = str(manifest["bucket_base_url"]).rstrip("/")
+    scroll_id = str(manifest["scroll_id"])
     for entry in sorted(manifest["wraps"], key=lambda item: int(item["wrap"])):
         wrap = int(entry["wrap"])
         remote_root = (
-            f"{base_url}/PHerc0500P2/segments/{entry['segment_id']}/{entry['tifxyz_dir']}"
+            f"{base_url}/{scroll_id}/segments/{entry['segment_id']}/{entry['tifxyz_dir']}"
         )
-        local_root = destination / f"wrap{wrap:02d}"
+        local_root = destination / str(entry.get("local_dir", f"wrap{wrap:02d}"))
         for filename in _EXPECTED_FILES:
             spec = entry["files"][filename]
             yield (
@@ -196,7 +215,7 @@ def prepare_benchmark(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Download missing PHerc0500P2 copy-cycle files and verify every byte."
+        description="Download missing copy-cycle benchmark files and verify every byte."
     )
     parser.add_argument("--manifest", type=Path, default=default_manifest_path())
     parser.add_argument("--destination", type=Path, required=True)

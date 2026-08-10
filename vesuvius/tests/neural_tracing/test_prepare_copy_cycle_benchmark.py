@@ -25,6 +25,19 @@ def test_preregistered_manifest_is_complete_and_valid():
     assert entries[0][2] == Path("benchmark/wrap01/meta.json")
 
 
+def test_unseen_scroll_manifest_is_complete_and_marks_one_exclusion():
+    manifest_path = default_manifest_path().with_name("copy_cycle_pherc0343p_manifest.json")
+    manifest = load_manifest(manifest_path)
+
+    entries = list(iter_manifest_files(manifest, Path("benchmark")))
+
+    assert manifest["scroll_id"] == "PHerc0343P"
+    assert len(entries) == 32
+    assert entries[0][2] == Path("benchmark/m6/meta.json")
+    assert entries[-1][2] == Path("benchmark/p1/z.tif")
+    assert sum(bool(entry["included_in_test"]) for entry in manifest["wraps"]) == 7
+
+
 def test_validate_manifest_rejects_path_traversal():
     manifest = load_manifest(default_manifest_path())
     modified = copy.deepcopy(manifest)
@@ -67,6 +80,7 @@ def test_verify_and_prepare_existing_files(tmp_path):
         "schema_version": 1,
         "scroll_id": "PHerc0500P2",
         "bucket_base_url": "https://example.test",
+        "expected_wraps": list(range(1, 14)),
         "wraps": wraps,
     }
 
