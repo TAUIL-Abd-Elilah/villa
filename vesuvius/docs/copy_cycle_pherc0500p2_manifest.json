@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "created_utc": "2026-08-11T00:00:00Z",
+  "scroll_id": "PHerc0500P2",
+  "voxel_size_um": 4.317,
+  "volume_url": "https://vesuvius-challenge-open-data.s3.amazonaws.com/PHerc0500P2/volumes/20250528085330-4.317um-1.2m-111keV-masked.zarr/",
+  "bucket_base_url": "https://vesuvius-challenge-open-data.s3.amazonaws.com",
+  "splits": {
+    "development_edges": [[1, 2], [2, 3], [3, 4]],
+    "validation_edges": [[5, 6], [6, 7]],
+    "buffer_edges": [[4, 5], [7, 8], [8, 9]],
+    "sealed_test_edges": [[9, 10], [10, 11], [11, 12], [12, 13]]
+  },
+  "wraps": [
+    {
+      "wrap": 1,
+      "segment_id": "20250919184428-0500P2-wrap01_0919",
+      "tifxyz_dir": "mesh/20250919184428-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 287, "sha256": "b2254e5df679ec3c37a5a3108257461b1408a0395e888028d02b4190118521a1"},
+        "x.tif": {"bytes": 4454, "sha256": "477782c3c734384c50bb89427dbab677931ccebf56bd6be1d7ae67daeab8edb0"},
+        "y.tif": {"bytes": 4454, "sha256": "825e7eb1dd9e2de4e687ee5573ac79250a5421e35282e4ee4fc8371a0937b683"},
+        "z.tif": {"bytes": 4454, "sha256": "8ff6e476326200b929676e96b5ac31906f9fed46779db4275170972e34703bd7"}
+      }
+    },
+    {
+      "wrap": 2,
+      "segment_id": "20250919184429-0500P2-wrap02_0919",
+      "tifxyz_dir": "mesh/20250919184429-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 290, "sha256": "28b566c09182824cfa48612058ec8a1b5d3a996d9282c34b2acacd1f3b28fa02"},
+        "x.tif": {"bytes": 10694, "sha256": "ffa808a0c8fea4e6406e908996702cc6978b388d64eddc413582eff401d6ccd6"},
+        "y.tif": {"bytes": 10694, "sha256": "738c4629c6f1c20f600e57323712aa374b2620c8774258ddf07f773202117042"},
+        "z.tif": {"bytes": 10694, "sha256": "75000177b3f624758e283681ad54fc9c066eff617e4422543148bd04e4ee4f21"}
+      }
+    },
+    {
+      "wrap": 3,
+      "segment_id": "20250919184430-0500P2-wrap03_0919",
+      "tifxyz_dir": "mesh/20250919184430-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 281, "sha256": "dcb7fdd397f1f1bed303b4b44b0640214d48d7728040fb3e744f419df26f6244"},
+        "x.tif": {"bytes": 20294, "sha256": "8ebbc93d5d27b4bb217dc0289c6e3fc51ffabdee1f8b0ca05f87465f500b2bc9"},
+        "y.tif": {"bytes": 20294, "sha256": "4f5a437692c8c35d53149f72565e747f55fbfc37ca9adb12f4f1c75e6f39d9c2"},
+        "z.tif": {"bytes": 20294, "sha256": "3d023dc4f9c4198e3a15402eb6688befbc18ddec6259691117b73f07db449b99"}
+      }
+    },
+    {
+      "wrap": 4,
+      "segment_id": "20250919184431-0500P2-wrap04_0919",
+      "tifxyz_dir": "mesh/20250919184431-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 287, "sha256": "f0b4cee8039f9421dd8665b1255fc35dd90c1b299b3a06f9a9768784f3b588b6"},
+        "x.tif": {"bytes": 58226, "sha256": "620933362bfe3532b15b66364be0bb22b678b49cbb62f3a7154228fcd560c092"},
+        "y.tif": {"bytes": 58226, "sha256": "d38e2bb4c3ac2d1bfeb56b06a16bb5667e14967f1810020f3290f9a8a4b0fbed"},
+        "z.tif": {"bytes": 58226, "sha256": "0f11633433f742919f7e1e7d365819cde22165e7d3dee608b3401ba4cf9903c5"}
+      }
+    },
+    {
+      "wrap": 5,
+      "segment_id": "20250919184432-0500P2-wrap05_0919",
+      "tifxyz_dir": "mesh/20250919184432-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 288, "sha256": "e610f0dfa655df97b26e79eda3ce233dff8ade1ebc6063ca6ffba0381d3fa16b"},
+        "x.tif": {"bytes": 52350, "sha256": "5dc3501d3929b2e70eda6a3f305a0a7489a34fe66e1f86c1b2d0d33a64540686"},
+        "y.tif": {"bytes": 52350, "sha256": "cbbb6255d51d899e3bc8439079e4c49bbc33d00f6e0dcaea1a7a71c67b76c22e"},
+        "z.tif": {"bytes": 52350, "sha256": "47e1b90fe4f010d0e9ce0e1b0a24b392ca0c75a92e8fa648023bb41f21577403"}
+      }
+    },
+    {
+      "wrap": 6,
+      "segment_id": "20250919184433-0500P2-wrap06_0919",
+      "tifxyz_dir": "mesh/20250919184433-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 285, "sha256": "31776f9a9ee3cc449060fd704be253b6206fc98950886cfd1b23f8e7c43b67a3"},
+        "x.tif": {"bytes": 40534, "sha256": "c6708f304938ad367104668767a87e32ab342d6bb5061e5c748f43571781a6dc"},
+        "y.tif": {"bytes": 40534, "sha256": "fd808487e82945fb51683aabc530833f2d9b41035d4cced718218dd818f609e0"},
+        "z.tif": {"bytes": 40534, "sha256": "de4e811d02d3cc2cb3ad344bf14b1a168be53fe9a6333881d2dfcd8d831b07aa"}
+      }
+    },
+    {
+      "wrap": 7,
+      "segment_id": "20250919184434-0500P2-wrap07_0919",
+      "tifxyz_dir": "mesh/20250919184434-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 281, "sha256": "bc59a18196843f88a93dca7b0bfff79fd6d15e97722d59b2fa98c8f57215e371"},
+        "x.tif": {"bytes": 40794, "sha256": "51bd8c8d0da2261d28d3eec5e852a6f864949bfbf92bebe14fb70b12e833b42d"},
+        "y.tif": {"bytes": 40794, "sha256": "7e8c3e4bd04bbfb1e402948da1b628629dfd2552ea837ab8bc87365895b68cdd"},
+        "z.tif": {"bytes": 40794, "sha256": "1ea0b28df8b0debcea76fba22570a34e7be2347d6a100508bcefd8ee9a9b5a25"}
+      }
+    },
+    {
+      "wrap": 8,
+      "segment_id": "20250919184435-0500P2-wrap08_0919",
+      "tifxyz_dir": "mesh/20250919184435-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 284, "sha256": "8799a835f94b35a196c7bfc425658f55786fd07a0a898dae0b8c8cabb261aad4"},
+        "x.tif": {"bytes": 42134, "sha256": "eaf228ce9fb51a94f8e548d0738fbfb0eb6f0ef343b3bf46f17b0082adc00e99"},
+        "y.tif": {"bytes": 42134, "sha256": "f9d459abf40766b80ccbac1fd661a4b9270c3723c67ed6c4cdfaf106d71e61c5"},
+        "z.tif": {"bytes": 42134, "sha256": "039fee9d6867022804e5bb683a598dbc4bedd04bf43fdf136bbeba709bb2b1e0"}
+      }
+    },
+    {
+      "wrap": 9,
+      "segment_id": "20250919184436-0500P2-wrap09_0919",
+      "tifxyz_dir": "mesh/20250919184436-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 273, "sha256": "ad6152026f84a01171debc541f067fc2b8e06ee09d98f86fe64b6b1370c76ef1"},
+        "x.tif": {"bytes": 31046, "sha256": "7a9490285b75c46329c2de7e42cde9e255de8f0e3129aba41a931dfd6483163e"},
+        "y.tif": {"bytes": 31046, "sha256": "3455495c8006b80dffcbb7f9ec3c439f3ebfa5062748bd39c624d5229bcb6d9e"},
+        "z.tif": {"bytes": 31046, "sha256": "1de28ca0691418270a3a1585400f9052b811ba92c538ed90a8480f2f2e259e05"}
+      }
+    },
+    {
+      "wrap": 10,
+      "segment_id": "20250920020222-0500P2-wrap10_0919",
+      "tifxyz_dir": "mesh/20250920020222-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 283, "sha256": "ef75c9e847d1779a3a276467948b8876a8d13e9c4b30caa193ca341432b7afe2"},
+        "x.tif": {"bytes": 29114, "sha256": "96455380942be5cc95b526b217638351af7e7cab622d5bb41c02529041a71479"},
+        "y.tif": {"bytes": 29114, "sha256": "df1b5346ed34500b57ecde7f4cf85bd250870222d207feeda5aabfbe3872c576"},
+        "z.tif": {"bytes": 29114, "sha256": "3d89bd2bb1526194734304eba489334ad81fc21e8082752ef86219ea5241625a"}
+      }
+    },
+    {
+      "wrap": 11,
+      "segment_id": "20250922024644-0500P2-wrap11_0919",
+      "tifxyz_dir": "mesh/20250922024644-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 287, "sha256": "daeaaf35c06a08ad42f67243cd8b39abb1bbb6e2c4499bc609d65655bf959d0e"},
+        "x.tif": {"bytes": 34630, "sha256": "b59f958ea071d84a98fa064ce6f3337ecf8db4132e8fec1e1bb4b9d51d6ce2dd"},
+        "y.tif": {"bytes": 34630, "sha256": "37c16b301e777bb9c6f9bd3a89224afcb65040a0096b92c11331c2dd274bd3c4"},
+        "z.tif": {"bytes": 34630, "sha256": "90dede7588c7b22ea9832e8952f1a0dd83d43e2e2f61d4fe9a6c969c0ca2d100"}
+      }
+    },
+    {
+      "wrap": 12,
+      "segment_id": "20250920020223-0500P2-wrap12_0919",
+      "tifxyz_dir": "mesh/20250920020223-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 289, "sha256": "270d1e7110d97aa59d69f97eeb02e1cb7b2cecc7a3198ec9fa8b61a5cf567c9e"},
+        "x.tif": {"bytes": 29926, "sha256": "d238b965f399e226b08d1753baf1221b6561972d1bac7adfd7336c4696ef8fa8"},
+        "y.tif": {"bytes": 29926, "sha256": "5abbcef31e44558cf9dbe1015af9df9caefedd018869a48b9aeaa4885961c498"},
+        "z.tif": {"bytes": 29926, "sha256": "6ab9ded903daae889382c8415ac27673f33a90189447c89cf0ad1d33cd7c64de"}
+      }
+    },
+    {
+      "wrap": 13,
+      "segment_id": "20250920020224-0500P2-wrap13_0919",
+      "tifxyz_dir": "mesh/20250920020224-on-20250528085330-4.317um.tifxyz",
+      "files": {
+        "meta.json": {"bytes": 280, "sha256": "91a2acb3e70833e0832a255bdc0a041f21a954c8b68c3c3d4e6e4a160afb30a6"},
+        "x.tif": {"bytes": 28254, "sha256": "d06b7b0dcd2a6c25eb4623a78fbda40d1cff145b57184ea625bef82c9c78eae1"},
+        "y.tif": {"bytes": 28254, "sha256": "db4cd3b01452fa05831200a2cbad4b926f49e136954e9da5ad0631d1105df131"},
+        "z.tif": {"bytes": 28254, "sha256": "43c9f433f78a5fc2672c5d6338132b275b665d0c90586b9c509bb9bace45f693"}
+      }
+    }
+  ]
+}
