@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "method": "copy_cycle_local_linear_v1",
+  "status": "locked_before_source04_completion",
+  "locked_utc": "2026-08-11T02:19:38.2794690Z",
+  "implementation_commit": "3530ecfb31635ede8e776f6eb60311d5b9017afe",
+  "inference_implementation_commit": "65e7ea1c9db5a4a215a0dfb7e965a63f90c40379",
+  "model_sha256": "c0372c888fa90b428075cbb9536e99589e9df034eb3a06c8a88d4f7c252b7e04",
+  "model_bytes": 5301,
+  "training_directions": [
+    "1->2",
+    "2->1",
+    "2->3"
+  ],
+  "training_rows": 1892,
+  "training_receipts": [
+    {
+      "source": 1,
+      "sha256": "9d2868e7797030a49622cbd34f6db30a6cab76e7e1c0b30c6b32fd2d3939e4e7"
+    },
+    {
+      "source": 2,
+      "sha256": "551421f76dccf67cc71cd52ba27d3d65067fe4a26f7949b322738546833944bb"
+    }
+  ]
+}
