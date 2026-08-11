@@ -124,6 +124,18 @@ try:
 except ImportError:
     pass
 
+# aiohttp.ClientPayloadError does not inherit OSError. It is raised when a
+# connection closes after returning only part of the advertised response body,
+# so retrying the whole object is safe. Keep this narrow: ClientResponseError
+# may represent a permanent HTTP status and is intentionally not included.
+try:
+    from aiohttp.client_exceptions import ClientPayloadError as _ClientPayloadError
+
+    _RETRYABLE_EXCEPTIONS = _RETRYABLE_EXCEPTIONS + (_ClientPayloadError,)
+    del _ClientPayloadError
+except ImportError:
+    pass
+
 
 class _DiskCacheStoreV3(getattr(zarr.storage, 'WrapperStore', object)):
     """Read-only Zarr v2 store wrapper that lazily caches remote bytes to disk."""

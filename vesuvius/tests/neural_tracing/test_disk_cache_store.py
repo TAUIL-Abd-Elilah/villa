@@ -3,6 +3,7 @@ import asyncio
 import pytest
 import zarr
 
+from vesuvius.neural_tracing.datasets import common
 from vesuvius.neural_tracing.datasets.common import _DiskCacheStore, OfflineCacheMiss
 
 
@@ -114,3 +115,51 @@ def test_disk_cache_store_offline_miss_and_range_read(tmp_path):
             await offline.get("chunk", prototype)
 
     asyncio.run(exercise())
+
+
+def test_disk_cache_store_retries_truncated_http_payload(monkeypatch):
+    from aiohttp.client_exceptions import ClientPayloadError
+
+    calls = 0
+
+    if not ZARR_V3:
+        class FlakyRemote(dict):
+            def __getitem__(self, key):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise ClientPayloadError("truncated response")
+                return b"payload"
+
+        cache = _DiskCacheStore(
+            FlakyRemote(),
+            "unused",
+            url="memory://retry",
+            retry_budget_seconds=5.0,
+        )
+        monkeypatch.setattr(common.time, "sleep", lambda delay: None)
+        assert cache._remote_get_with_retry("chunk") == b"payload"
+        assert calls == 2
+        return
+
+    async def no_sleep(delay):
+        return None
+
+    class FlakyRemote:
+        async def get(self, key, prototype, byte_range=None):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise ClientPayloadError("truncated response")
+            return b"payload"
+
+    async def exercise():
+        cache = object.__new__(_DiskCacheStore)
+        cache._remote = FlakyRemote()
+        cache._retry_budget_seconds = 5.0
+        result = await cache._remote_get_with_retry("chunk", None)
+        assert result == b"payload"
+
+    monkeypatch.setattr(common.asyncio, "sleep", no_sleep)
+    asyncio.run(exercise())
+    assert calls == 2
