@@ -57,6 +57,15 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(wraps, list) or not wraps:
         raise ValueError("manifest wraps must be a non-empty list")
 
+    excluded_raw = manifest.get("excluded_wraps", [])
+    if not isinstance(excluded_raw, list):
+        raise ValueError("excluded_wraps must be a list when present")
+    excluded_wraps = {int(value) for value in excluded_raw}
+    if len(excluded_wraps) != len(excluded_raw) or not excluded_wraps.issubset(
+        expected_wraps
+    ):
+        raise ValueError("excluded_wraps must contain unique expected wrap identifiers")
+
     seen_wraps: set[int] = set()
     seen_remote_paths: set[str] = set()
     for entry in wraps:
@@ -100,6 +109,40 @@ def validate_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
             f"benchmark wraps must equal expected_wraps={sorted(expected_wraps)}, "
             f"got {sorted(seen_wraps)}"
         )
+    marked_excluded = {
+        int(entry["wrap"])
+        for entry in wraps
+        if entry.get("included_in_test") is False
+    }
+    if marked_excluded != excluded_wraps:
+        raise ValueError(
+            "excluded_wraps must exactly match wraps marked included_in_test=false"
+        )
+    edge_source = manifest.get("splits", manifest)
+    for edge_key in (
+        "development_edges",
+        "validation_edges",
+        "sealed_test_edges",
+        "buffer_edges",
+    ):
+        raw_edges = edge_source.get(edge_key)
+        if raw_edges is None:
+            continue
+        if not isinstance(raw_edges, list) or not raw_edges:
+            raise ValueError(f"{edge_key} must be a non-empty list when present")
+        seen_edges: set[tuple[int, int]] = set()
+        for raw_edge in raw_edges:
+            if not isinstance(raw_edge, list) or len(raw_edge) != 2:
+                raise ValueError(f"invalid {edge_key} edge: {raw_edge!r}")
+            first, second = int(raw_edge[0]), int(raw_edge[1])
+            if first == second or first not in expected_wraps or second not in expected_wraps:
+                raise ValueError(f"invalid {edge_key} edge: {raw_edge!r}")
+            canonical = (min(first, second), max(first, second))
+            if canonical in seen_edges:
+                raise ValueError(f"duplicate {edge_key} edge: {raw_edge!r}")
+            seen_edges.add(canonical)
+            if edge_key != "buffer_edges" and ({first, second} & excluded_wraps):
+                raise ValueError(f"{edge_key} references an excluded wrap: {raw_edge!r}")
     return manifest
 
 

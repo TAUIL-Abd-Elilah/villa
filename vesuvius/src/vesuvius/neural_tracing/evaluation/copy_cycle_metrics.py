@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import permutations
 import math
 from typing import Mapping, Sequence
 
@@ -40,6 +41,42 @@ class ScoreResult:
     target_distance: np.ndarray
     wrong_distance: np.ndarray
     sheet_switch: np.ndarray
+
+
+@dataclass(frozen=True)
+class DistanceIndex:
+    """Nearest-point index over one or more surface point clouds."""
+
+    trees: tuple[cKDTree, ...]
+
+    @classmethod
+    def from_clouds(cls, clouds: Sequence[np.ndarray]) -> "DistanceIndex":
+        trees: list[cKDTree] = []
+        for cloud in clouds:
+            cloud_arr = np.asarray(cloud, dtype=np.float32)
+            if cloud_arr.ndim != 2 or cloud_arr.shape[1] != 3 or cloud_arr.shape[0] == 0:
+                raise ValueError(
+                    f"distance-index clouds must have non-empty shape [N, 3], got {cloud_arr.shape}"
+                )
+            trees.append(cKDTree(cloud_arr))
+        if not trees:
+            raise ValueError("distance index requires at least one point cloud")
+        return cls(trees=tuple(trees))
+
+    def query(self, points: np.ndarray) -> np.ndarray:
+        points_arr = np.asarray(points, dtype=np.float32)
+        if points_arr.ndim != 2 or points_arr.shape[1] != 3:
+            raise ValueError(f"query points must have shape [N, 3], got {points_arr.shape}")
+        minimum = np.full((points_arr.shape[0],), np.inf, dtype=np.float64)
+        for tree in self.trees:
+            minimum = np.minimum(minimum, tree.query(points_arr, workers=-1)[0])
+        return minimum
+
+
+def _distance_index(value: np.ndarray | DistanceIndex) -> DistanceIndex:
+    if isinstance(value, DistanceIndex):
+        return value
+    return DistanceIndex.from_clouds((np.asarray(value, dtype=np.float32),))
 
 
 def _checked_grid(grid: np.ndarray, valid: np.ndarray, label: str) -> tuple[np.ndarray, np.ndarray]:
@@ -148,20 +185,19 @@ def densify_surface_grid(
         & valid_arr[1:, :-1]
         & valid_arr[1:, 1:]
     )
-    pair_lengths = np.stack(
+    boundary_lengths = np.stack(
         [
             np.linalg.norm(p01 - p00, axis=-1),
             np.linalg.norm(p10 - p00, axis=-1),
             np.linalg.norm(p11 - p01, axis=-1),
             np.linalg.norm(p11 - p10, axis=-1),
-            np.linalg.norm(p11 - p00, axis=-1),
-            np.linalg.norm(p10 - p01, axis=-1),
         ],
         axis=0,
     )
-    max_pair_length = np.max(pair_lengths, axis=0)
-    max_boundary_length = np.max(pair_lengths[:4], axis=0)
-    quad_valid &= np.isfinite(max_pair_length) & (max_pair_length <= float(max_edge))
+    max_boundary_length = np.max(boundary_lengths, axis=0)
+    quad_valid &= np.isfinite(max_boundary_length) & (
+        max_boundary_length <= float(max_edge)
+    )
     subdivisions = np.ones(max_boundary_length.shape, dtype=np.int16)
     subdivisions[quad_valid] = np.maximum(
         1,
@@ -209,19 +245,17 @@ def central_dense_surface(
 def eligibility_mask(
     source_grid: np.ndarray,
     source_valid: np.ndarray,
-    target_points: np.ndarray,
+    target_points: np.ndarray | DistanceIndex,
     *,
     inner_fraction: float = INNER_FRACTION,
     max_source_to_target: float = MAX_SOURCE_TO_TARGET,
 ) -> tuple[np.ndarray, np.ndarray]:
     source_arr, source_mask = _checked_grid(source_grid, source_valid, "source")
-    target_arr = np.asarray(target_points, dtype=np.float32)
-    if target_arr.ndim != 2 or target_arr.shape[1] != 3 or target_arr.shape[0] == 0:
-        raise ValueError(f"target_points must have non-empty shape [N, 3], got {target_arr.shape}")
+    target_index = _distance_index(target_points)
     central = central_fraction_mask(source_mask, inner_fraction)
     distances = np.full(source_mask.shape, np.nan, dtype=np.float32)
     if bool(central.any()):
-        distances[central] = cKDTree(target_arr).query(source_arr[central], workers=-1)[0]
+        distances[central] = target_index.query(source_arr[central])
     eligible = central & (distances <= float(max_source_to_target))
     return eligible, distances
 
@@ -229,8 +263,8 @@ def eligibility_mask(
 def score_prediction(
     source_grid: np.ndarray,
     source_valid: np.ndarray,
-    target_points: np.ndarray,
-    wrong_points: np.ndarray,
+    target_points: np.ndarray | DistanceIndex,
+    wrong_points: np.ndarray | DistanceIndex,
     prediction_grid: np.ndarray,
     prediction_valid: np.ndarray,
     *,
@@ -246,17 +280,13 @@ def score_prediction(
         raise ValueError(
             f"prediction shape {prediction_arr.shape} must equal source shape {source_arr.shape}"
         )
-    target_arr = np.asarray(target_points, dtype=np.float32)
-    wrong_arr = np.asarray(wrong_points, dtype=np.float32)
-    if target_arr.ndim != 2 or target_arr.shape[1] != 3 or target_arr.shape[0] == 0:
-        raise ValueError("target_points must have non-empty shape [N, 3]")
-    if wrong_arr.ndim != 2 or wrong_arr.shape[1] != 3 or wrong_arr.shape[0] == 0:
-        raise ValueError("wrong_points must have non-empty shape [N, 3]")
+    target_index = _distance_index(target_points)
+    wrong_index = _distance_index(wrong_points)
 
     eligible, _ = eligibility_mask(
         source_arr,
         source_mask,
-        target_arr,
+        target_index,
         max_source_to_target=max_source_to_target,
     )
     n_eligible = int(eligible.sum())
@@ -270,8 +300,8 @@ def score_prediction(
     sheet_switch = np.zeros(eligible.shape, dtype=bool)
     if n_valid > 0:
         predicted_points = prediction_arr[scored_valid]
-        target_values = cKDTree(target_arr).query(predicted_points, workers=-1)[0]
-        wrong_values = cKDTree(wrong_arr).query(predicted_points, workers=-1)[0]
+        target_values = target_index.query(predicted_points)
+        wrong_values = wrong_index.query(predicted_points)
         target_distance[scored_valid] = target_values
         wrong_distance[scored_valid] = wrong_values
         sheet_switch[scored_valid] = wrong_values + float(switch_margin) < target_values
@@ -354,6 +384,39 @@ def choose_return_branch(
     return selected, medians
 
 
+def assign_baseline_branches(
+    branches: Sequence[str],
+    targets: Sequence[int],
+    scores: Mapping[tuple[str, int], ScoreResult],
+) -> dict[int, str]:
+    """Assign arbitrary chart-side labels using baseline cost only."""
+
+    branch_names = tuple(sorted(str(name) for name in branches))
+    target_ids = tuple(sorted(int(target) for target in targets))
+    if not branch_names or not target_ids:
+        raise ValueError("branches and targets must both be non-empty")
+    if len(target_ids) > len(branch_names):
+        raise ValueError("there must be at least as many branches as targets")
+    missing = [
+        (branch, target)
+        for branch in branch_names
+        for target in target_ids
+        if (branch, target) not in scores
+    ]
+    if missing:
+        raise ValueError(f"missing baseline branch-target scores: {missing}")
+
+    assignments: list[tuple[float, tuple[str, ...]]] = []
+    for selected_branches in permutations(branch_names, len(target_ids)):
+        total_cost = sum(
+            float(scores[(branch, target)].metrics["penalized_target_distance_mean"])
+            for target, branch in zip(target_ids, selected_branches)
+        )
+        assignments.append((total_cost, selected_branches))
+    _, winning_branches = min(assignments, key=lambda item: (item[0], item[1]))
+    return {target: branch for target, branch in zip(target_ids, winning_branches)}
+
+
 def apply_cycle_guard(
     source_grid: np.ndarray,
     source_valid: np.ndarray,
@@ -364,6 +427,55 @@ def apply_cycle_guard(
     *,
     alpha: float,
     tau: float,
+) -> GuardResult:
+    return _apply_cycle_guard_with_sign(
+        source_grid,
+        source_valid,
+        forward_grid,
+        forward_valid,
+        return_grid,
+        return_valid,
+        alpha=alpha,
+        tau=tau,
+        correction_sign=-1.0,
+    )
+
+
+def apply_wrong_sign_null(
+    source_grid: np.ndarray,
+    source_valid: np.ndarray,
+    forward_grid: np.ndarray,
+    forward_valid: np.ndarray,
+    return_grid: np.ndarray,
+    return_valid: np.ndarray,
+    *,
+    alpha: float,
+    tau: float,
+) -> GuardResult:
+    return _apply_cycle_guard_with_sign(
+        source_grid,
+        source_valid,
+        forward_grid,
+        forward_valid,
+        return_grid,
+        return_valid,
+        alpha=alpha,
+        tau=tau,
+        correction_sign=1.0,
+    )
+
+
+def _apply_cycle_guard_with_sign(
+    source_grid: np.ndarray,
+    source_valid: np.ndarray,
+    forward_grid: np.ndarray,
+    forward_valid: np.ndarray,
+    return_grid: np.ndarray,
+    return_valid: np.ndarray,
+    *,
+    alpha: float,
+    tau: float,
+    correction_sign: float,
 ) -> GuardResult:
     source_arr, source_mask = _checked_grid(source_grid, source_valid, "source")
     forward_arr, forward_mask = _checked_grid(forward_grid, forward_valid, "forward")
@@ -384,7 +496,8 @@ def apply_cycle_guard(
 
     corrected = np.full_like(source_arr, -1.0, dtype=np.float32)
     corrected[accepted] = (
-        forward_arr[accepted] - float(alpha) * residual_vector[accepted]
+        forward_arr[accepted]
+        + float(correction_sign) * float(alpha) * residual_vector[accepted]
     ).astype(np.float32, copy=False)
     return GuardResult(
         grid=corrected,
@@ -415,6 +528,94 @@ def aggregate_scores(results: Sequence[ScoreResult]) -> dict[str, float | int]:
         "target_distance_p95_valid": (
             float(np.percentile(valid_distances, 95.0)) if valid_distances.size else math.inf
         ),
+    }
+
+
+def select_validation_candidate(
+    baseline: Sequence[ScoreResult],
+    candidates: Mapping[tuple[float, float], Sequence[ScoreResult]],
+) -> dict[str, object]:
+    """Apply the frozen validation coverage gate and lexicographic selection."""
+
+    if not baseline:
+        raise ValueError("baseline validation scores cannot be empty")
+    no_op_key = (0.0, math.inf)
+    if no_op_key not in candidates:
+        raise ValueError("candidate grid must include the no-op key (0.0, infinity)")
+    direction_count = len(baseline)
+    for key, results in candidates.items():
+        if float(key[0]) not in ALPHA_GRID or float(key[1]) not in TAU_GRID:
+            raise ValueError(f"candidate key is outside the frozen grid: {key}")
+        if len(results) != direction_count:
+            raise ValueError(
+                f"candidate {key} has {len(results)} directions, expected {direction_count}"
+            )
+
+    eligible: list[tuple[tuple[float, float], dict[str, float | int]]] = []
+    coverage_failures: dict[str, list[int]] = {}
+    for key, results in candidates.items():
+        failed_directions = [
+            index
+            for index, (baseline_result, candidate_result) in enumerate(zip(baseline, results))
+            if float(candidate_result.metrics["coverage"])
+            < 0.9 * float(baseline_result.metrics["coverage"])
+        ]
+        if failed_directions:
+            coverage_failures[f"alpha={key[0]:g},tau={key[1]:g}"] = failed_directions
+            continue
+        aggregate = aggregate_scores(results)
+        baseline_aggregate = aggregate_scores(baseline)
+        if float(aggregate["coverage"]) < 0.9 * float(baseline_aggregate["coverage"]):
+            coverage_failures[f"alpha={key[0]:g},tau={key[1]:g}"] = [-1]
+            continue
+        eligible.append((key, aggregate))
+
+    if not eligible:
+        return {
+            "status": "validation_negative",
+            "reason": "no frozen-grid candidate passed every coverage gate",
+            "selected": None,
+            "coverage_failures": coverage_failures,
+        }
+
+    def rank(item: tuple[tuple[float, float], dict[str, float | int]]) -> tuple[float, ...]:
+        (alpha, tau), aggregate = item
+        return (
+            float(aggregate["penalized_target_distance_mean"]),
+            float(aggregate["sheet_switch_rate_all_eligible"]),
+            float(alpha),
+            -float(tau),
+        )
+
+    selected_key, selected_aggregate = min(eligible, key=rank)
+    no_op_results = candidates[no_op_key]
+    improved_directions = sum(
+        float(selected.metrics["penalized_target_distance_mean"])
+        < float(no_op.metrics["penalized_target_distance_mean"])
+        for selected, no_op in zip(candidates[selected_key], no_op_results)
+    )
+    required_improvements = int(math.ceil(0.75 * direction_count))
+    if selected_key == no_op_key or improved_directions < required_improvements:
+        return {
+            "status": "validation_negative",
+            "reason": (
+                "the lexicographic winner was no-op or did not improve the required "
+                "three-quarters of directed tasks"
+            ),
+            "selected": None,
+            "best_grid_key": {"alpha": selected_key[0], "tau": selected_key[1]},
+            "improved_directions_vs_no_op": improved_directions,
+            "required_improved_directions": required_improvements,
+            "coverage_failures": coverage_failures,
+        }
+    return {
+        "status": "validation_positive",
+        "reason": "frozen coverage and direction-improvement gates passed",
+        "selected": {"alpha": selected_key[0], "tau": selected_key[1]},
+        "selected_aggregate": selected_aggregate,
+        "improved_directions_vs_no_op": improved_directions,
+        "required_improved_directions": required_improvements,
+        "coverage_failures": coverage_failures,
     }
 
 

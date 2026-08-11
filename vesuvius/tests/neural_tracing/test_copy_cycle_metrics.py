@@ -6,11 +6,15 @@ import pytest
 from vesuvius.neural_tracing.evaluation.copy_cycle_metrics import (
     aggregate_scores,
     apply_cycle_guard,
+    apply_wrong_sign_null,
+    assign_baseline_branches,
     binary_ranking_metrics,
     central_fraction_mask,
     choose_return_branch,
     densify_surface_grid,
+    DistanceIndex,
     score_prediction,
+    select_validation_candidate,
 )
 
 
@@ -60,6 +64,25 @@ def test_densify_surface_grid_ignores_nonfinite_invalid_cells():
     assert np.isfinite(points).all()
 
 
+def test_densify_surface_grid_applies_discontinuity_limit_to_quad_edges_only():
+    grid = np.array(
+        [
+            [[0.0, 0.0, 0.0], [0.0, 0.0, 50.0]],
+            [[0.0, 50.0, 0.0], [0.0, 50.0, 50.0]],
+        ],
+        dtype=np.float32,
+    )
+
+    points = densify_surface_grid(
+        grid,
+        np.ones((2, 2), dtype=bool),
+        spacing=25.0,
+        max_edge=60.0,
+    )
+
+    assert np.any(np.all(np.isclose(points, [0.0, 25.0, 25.0]), axis=1))
+
+
 def test_cycle_guard_uses_frozen_correction_sign_and_threshold():
     source, valid = _constant_grid(0.0)
     forward, _ = _constant_grid(10.0)
@@ -91,6 +114,17 @@ def test_cycle_guard_uses_frozen_correction_sign_and_threshold():
     assert np.allclose(accepted.grid[..., 2], 9.0)
     assert np.allclose(accepted.residual, 2.0)
     assert not rejected.valid.any()
+    wrong_sign = apply_wrong_sign_null(
+        source,
+        valid,
+        forward,
+        valid,
+        returned,
+        valid,
+        alpha=0.5,
+        tau=4.0,
+    )
+    assert np.allclose(wrong_sign.grid[..., 2], 11.0)
 
 
 def test_choose_return_branch_uses_median_cycle_error_without_target():
@@ -104,6 +138,25 @@ def test_choose_return_branch_uses_median_cycle_error_without_target():
 
     assert selected == "back"
     assert medians == {"front": 5.0, "back": 1.0}
+
+
+def test_baseline_branch_assignment_is_global_and_candidate_independent():
+    source, valid = _constant_grid(0.0)
+    front, _ = _constant_grid(10.0)
+    back, _ = _constant_grid(-10.0)
+    target_front = np.array([[0.0, 0.0, 10.0]], dtype=np.float32)
+    target_back = np.array([[0.0, 0.0, -10.0]], dtype=np.float32)
+    wrong = np.array([[0.0, 100.0, 0.0]], dtype=np.float32)
+    scores = {
+        ("front", 1): score_prediction(source, valid, target_front, wrong, front, valid),
+        ("front", 2): score_prediction(source, valid, target_back, wrong, front, valid),
+        ("back", 1): score_prediction(source, valid, target_front, wrong, back, valid),
+        ("back", 2): score_prediction(source, valid, target_back, wrong, back, valid),
+    }
+
+    assignment = assign_baseline_branches(("front", "back"), (1, 2), scores)
+
+    assert assignment == {1: "front", 2: "back"}
 
 
 def test_score_prediction_penalizes_missing_cells_and_wrong_sheet():
@@ -130,6 +183,19 @@ def test_score_prediction_penalizes_missing_cells_and_wrong_sheet():
     assert aggregate["penalized_target_distance_mean"] == 20.0
 
 
+def test_distance_index_takes_minimum_across_surface_trees():
+    index = DistanceIndex.from_clouds(
+        (
+            np.array([[0.0, 0.0, -10.0]], dtype=np.float32),
+            np.array([[0.0, 0.0, 10.0]], dtype=np.float32),
+        )
+    )
+
+    distances = index.query(np.array([[0.0, 0.0, 9.0], [0.0, 0.0, -8.0]]))
+
+    assert np.allclose(distances, [1.0, 2.0])
+
+
 def test_binary_ranking_metrics_distinguishes_signal_from_inverse():
     labels = np.array([False, False, True, True])
 
@@ -147,3 +213,42 @@ def test_guard_rejects_unregistered_parameters():
 
     with pytest.raises(ValueError, match="alpha"):
         apply_cycle_guard(grid, valid, grid, valid, grid, valid, alpha=0.1, tau=4.0)
+
+
+def test_validation_selection_enforces_each_direction_coverage():
+    source, valid = _constant_grid(0.0)
+    target = np.array([[0.0, 0.0, 10.0]], dtype=np.float32)
+    wrong = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
+    baseline_grid, _ = _constant_grid(12.0)
+    better_grid, _ = _constant_grid(10.0)
+    baseline = [
+        score_prediction(source, valid, target, wrong, baseline_grid, valid)
+        for _ in range(4)
+    ]
+    no_op = [
+        score_prediction(source, valid, target, wrong, baseline_grid, valid)
+        for _ in range(4)
+    ]
+    better = [
+        score_prediction(source, valid, target, wrong, better_grid, valid)
+        for _ in range(4)
+    ]
+    low_coverage_mask = valid.copy()
+    low_coverage_mask[:, :2] = False
+    low_coverage = list(better)
+    low_coverage[0] = score_prediction(
+        source, valid, target, wrong, better_grid, low_coverage_mask
+    )
+
+    selection = select_validation_candidate(
+        baseline,
+        {
+            (0.0, math.inf): no_op,
+            (0.25, 48.0): better,
+            (0.5, 24.0): low_coverage,
+        },
+    )
+
+    assert selection["status"] == "validation_positive"
+    assert selection["selected"] == {"alpha": 0.25, "tau": 48.0}
+    assert "alpha=0.5,tau=24" in selection["coverage_failures"]

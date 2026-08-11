@@ -47,6 +47,28 @@ def test_validate_manifest_rejects_path_traversal():
         validate_manifest(modified)
 
 
+def test_validate_manifest_rejects_inconsistent_exclusion_markers():
+    manifest = load_manifest(
+        default_manifest_path().with_name("copy_cycle_pherc0343p_manifest.json")
+    )
+    modified = copy.deepcopy(manifest)
+    modified["excluded_wraps"] = []
+
+    with pytest.raises(ValueError, match="exactly match"):
+        validate_manifest(modified)
+
+
+def test_validate_manifest_rejects_excluded_scoring_edge():
+    manifest = load_manifest(
+        default_manifest_path().with_name("copy_cycle_pherc0343p_manifest.json")
+    )
+    modified = copy.deepcopy(manifest)
+    modified["sealed_test_edges"][0] = [1, 2]
+
+    with pytest.raises(ValueError, match="excluded wrap"):
+        validate_manifest(modified)
+
+
 def test_verify_and_prepare_existing_files(tmp_path):
     payloads = {
         "meta.json": b"{}\n",

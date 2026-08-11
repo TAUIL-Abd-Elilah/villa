@@ -54,6 +54,12 @@ surface is 576.1 voxels, while consecutive numbered-pair medians are
 23.6--43.3 voxels. The excluded file remains hashed in the manifest so this
 decision is auditable.
 
+The excluded legacy segment is verified by hash but is not used as a target or
+as part of the wrong-sheet cloud. For the discrete central-70% rule, the
+implementation trims `floor(0.15 * extent)` cells from each side of the valid
+row and column bounding box; this deterministic rounding is fixed before any
+model forward pass.
+
 ### Volume and coordinate convention
 
 - Native CT:
@@ -93,7 +99,11 @@ The six v1 conditions are retained, with only the task-count condition changed:
 6. real cycle residual ranks bad cells better than the shifted-residual null.
 
 The source-stay and wrong-sign correction arms must also be reported and beaten
-as defined in v1. Every direction is shown separately.
+as defined in v1. Here, "beaten" means a strictly lower aggregate penalized
+mean target distance. Condition 6 requires both micro-averaged AUROC and
+average precision for the real residual to be strictly greater than the same
+metrics for the shifted residual on their common finite support; an undefined
+metric fails the gate. Every direction is shown separately.
 
 ## Rollout endpoint
 

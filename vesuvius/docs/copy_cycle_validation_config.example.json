@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "scroll_id": "PHerc0500P2",
+  "phase": "validation",
+  "manifest": "copy_cycle_pherc0500p2_manifest.json",
+  "data_root": "/path/to/pherc0500p2",
+  "source_wraps": [5, 6, 7],
+  "volume_path": "https://vesuvius-challenge-open-data.s3.amazonaws.com/PHerc0500P2/volumes/20250528085330-4.317um-1.2m-111keV-masked.zarr/",
+  "volume_scale": 0,
+  "tifxyz_voxel_size_um": 4.317,
+  "checkpoint_path": "/path/to/copy_displacement_latest.pth",
+  "checkpoint_sha256": "22cf4392f2f61e6a5548c7b68148e97fed4ee772abf4f842cc6b8d1ef3ca1370",
+  "output_dir": "/path/to/copy-cycle-validation-run",
+  "copy_args": {
+    "device": "cuda",
+    "batch_size": 1,
+    "crop_input_workers": 1,
+    "bbox_band_workers": 4,
+    "compile_model": false,
+    "tta": true,
+    "tta_transform": "mirror",
+    "tta_merge_method": "vector_geomedian",
+    "tta_batch_size": 2,
+    "volume_chunk_cache_gb": 12,
+    "volume_cache_dir": "/path/to/volume-cache",
+    "verbose": true
+  }
+}
