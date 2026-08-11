@@ -50,6 +50,13 @@ anomalies. It is a review-prioritization tool and does not run or correct the
 displacement scaling across voxel sizes. It addresses coordinate-scale transfer,
 not round-trip confidence, branch selection, correction, or rollout rollback.
 
+The later supervised calibration extension does overlap with #1284 whenever it
+uses forward displacement alone. Its preregistration therefore treats physical
+scalar scaling, a fitted scalar, and a local displacement-only matrix as
+mandatory controls. Only held-out improvement contributed by the round-trip
+features is eligible as a distinct claim; if the combined model does not beat
+those controls by its frozen margin, that extension stops before validation.
+
 ### Other cycle-consistency discussion
 
 The Discord export contains one 2026-08-05 question about using cycle
