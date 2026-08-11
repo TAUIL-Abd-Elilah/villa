@@ -30,6 +30,14 @@ forward branches and both return branches for every source. It atomically
 updates `run_receipt.json` after each completed source. A partial receipt has
 `"completed": false` and must not be scored as a complete phase.
 
+The native `vc.Volume` reader is preferred when its Python binding is
+available. Otherwise inference uses the project's existing read-only Zarr
+reader and persistent `volume_cache_dir`; this is useful on machines where the
+C++ binding is not built. The receipt records the selected backend plus the
+Python, Torch, Zarr, codec, filesystem, and volume-cartographer versions. The
+fallback does not reinterpret data: it exposes the same ZYX slices to the crop
+reader.
+
 Development may use a subset of its source block. Validation and sealed test
 must contain every source endpoint declared by their manifest edges.
 

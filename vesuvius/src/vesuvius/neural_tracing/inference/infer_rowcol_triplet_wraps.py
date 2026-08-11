@@ -11,7 +11,13 @@ from scipy import ndimage
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
-import vc
+
+try:
+    import vc
+except ModuleNotFoundError as exc:  # pragma: no cover - depends on the runtime build
+    if exc.name != "vc":
+        raise
+    vc = None
 
 try:
     import trimesh
@@ -25,6 +31,7 @@ except Exception:  # pragma: no cover - optional dependency at runtime
 
 from vesuvius.neural_tracing.datasets.common import (
     _read_volume_crop,
+    open_zarr,
     voxelize_surface_grid_masked,
 )
 from vesuvius.neural_tracing.inference.displacement_tta import (
@@ -90,6 +97,8 @@ _DEFAULT_VOLUME_CHUNK_CACHE_GB = 20.0
 class _VcVolumeLevel:
     """Small array adapter over vc.Volume for the crop reader used here."""
 
+    backend_name = "vc"
+
     def __init__(self, volume, level):
         self._volume = volume
         self._level = int(level)
@@ -122,15 +131,48 @@ class _VcVolumeLevel:
         )
 
 
-def _open_vc_volume_level(volume_path, volume_scale, cache_dir, chunk_cache_gb):
+class _ZarrVolumeLevel:
+    """Array adapter used when the optional native vc binding is unavailable."""
+
+    backend_name = "zarr"
+
+    def __init__(self, array):
+        self._array = array
+        self.shape = tuple(int(value) for value in array.shape)
+        self.dtype = np.dtype(array.dtype)
+        self.chunks = tuple(int(value) for value in array.chunks)
+
+    def __getitem__(self, key):
+        return np.asarray(self._array[key])
+
+
+def _open_vc_volume_level(
+    volume_path,
+    volume_scale,
+    cache_dir,
+    chunk_cache_gb,
+    retry_seconds=60.0,
+):
     path = str(volume_path)
+    target_level = int(volume_scale)
+
+    if vc is None:
+        array = open_zarr(
+            path,
+            scale=target_level,
+            config={
+                "volume_cache_dir": str(cache_dir),
+                "volume_cache_retry_seconds": float(retry_seconds),
+            },
+        )
+        return _ZarrVolumeLevel(array), target_level
+
     cache_bytes = int(round(float(chunk_cache_gb) * (1024 ** 3)))
 
     def _set_cache_budget(volume):
         volume.set_cache_budget(cache_bytes)
         return volume
 
-    target_level = int(volume_scale)
     if path.startswith(("http://", "https://", "s3://")):
         volume = _set_cache_budget(vc.Volume.open_url(path, cache_root=str(cache_dir)))
     else:
@@ -2613,10 +2655,11 @@ def run(args):
         volume_scale=args.volume_scale,
         cache_dir=args.volume_cache_dir,
         chunk_cache_gb=args.volume_chunk_cache_gb,
+        retry_seconds=args.volume_cache_retry_seconds,
     )
     _log(
         args.verbose,
-        "resolved vc volume level "
+        f"resolved {volume_arr.backend_name} volume level "
         f"shape={tuple(int(v) for v in volume_arr.shape)} "
         f"volume_scale={int(args.volume_scale)} "
         f"resolved_level={int(resolved_volume_level)} "

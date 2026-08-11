@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+from importlib import metadata
 import json
 from pathlib import Path
 import re
@@ -372,13 +373,25 @@ def _refuse_nonempty_output(output_root: Path) -> None:
 def _runtime_versions() -> dict[str, Any]:
     import torch
 
+    def package_version(distribution: str) -> str | None:
+        try:
+            return metadata.version(distribution)
+        except metadata.PackageNotFoundError:
+            return None
+
     cuda_name = None
     if torch.cuda.is_available():
         cuda_name = torch.cuda.get_device_name(0)
     return {
+        "executable": sys.executable,
         "python": sys.version,
         "torch": torch.__version__,
         "torch_cuda": torch.version.cuda,
+        "zarr": package_version("zarr"),
+        "numcodecs": package_version("numcodecs"),
+        "fsspec": package_version("fsspec"),
+        "s3fs": package_version("s3fs"),
+        "volume_cartographer": package_version("volume-cartographer"),
         "cuda_available": bool(torch.cuda.is_available()),
         "cuda_device_0": cuda_name,
         "platform": sys.platform,
@@ -502,6 +515,7 @@ def run_experiment(config_path: Path, test_authorization_path: Path | None = Non
         volume_scale=args.volume_scale,
         cache_dir=args.volume_cache_dir,
         chunk_cache_gb=args.volume_chunk_cache_gb,
+        retry_seconds=args.volume_cache_retry_seconds,
     )
     if int(resolved_volume_level) != int(args.volume_scale):
         raise RuntimeError(
@@ -526,6 +540,7 @@ def run_experiment(config_path: Path, test_authorization_path: Path | None = Non
         "benchmark_file_count": int(benchmark_receipt["file_count"]),
         "benchmark_total_bytes": int(benchmark_receipt["total_bytes"]),
         "volume_path": str(args.volume_path),
+        "volume_backend": str(volume_arr.backend_name),
         "volume_scale_requested": int(args.volume_scale),
         "volume_scale_resolved": int(resolved_volume_level),
         "crop_size": [int(value) for value in crop_size],
