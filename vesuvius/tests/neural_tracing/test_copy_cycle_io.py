@@ -1,12 +1,45 @@
 import json
+import subprocess
 
 import numpy as np
+import pytest
 
 from vesuvius.neural_tracing.evaluation.copy_cycle_io import (
+    clean_git_commit,
     json_safe,
     sha256_tifxyz,
     write_json_atomic,
 )
+
+
+def test_clean_git_commit_rejects_uncommitted_state(tmp_path):
+    subprocess.run(["git", "init", str(tmp_path)], check=True, capture_output=True)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.txt"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "-c",
+            "user.name=Copy Cycle Test",
+            "-c",
+            "user.email=copy-cycle@example.test",
+            "commit",
+            "-m",
+            "initial",
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    commit = clean_git_commit(tmp_path)
+
+    assert len(commit) == 40
+    tracked.write_text("dirty\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match="clean worktree"):
+        clean_git_commit(tmp_path)
 
 
 def test_json_safe_and_atomic_writer_emit_strict_json(tmp_path):

@@ -6,13 +6,21 @@ import argparse
 from datetime import datetime, timezone
 from importlib import metadata
 import json
+import math
 from pathlib import Path
 import re
-import subprocess
 import sys
 from typing import Any, Sequence
 
+from vesuvius.neural_tracing.evaluation.copy_cycle_calibration import (
+    FROZEN_CORRECTION_CAP,
+    FROZEN_RIDGE,
+    CalibrationBundle,
+    inference_receipt_signature,
+    training_inference_signature,
+)
 from vesuvius.neural_tracing.evaluation.copy_cycle_io import (
+    clean_git_commit,
     sha256_file,
     sha256_tifxyz,
     write_json_atomic,
@@ -40,6 +48,18 @@ _DISALLOWED_COPY_ARGS = {
     "tifxyz_voxel_size_um",
     "volume_path",
     "volume_scale",
+}
+
+_LEARNED_METHOD = "copy_cycle_local_linear_v1"
+_LEARNED_SCORE_METHOD = "copy_cycle_local_linear_v1_score"
+_LEARNED_VALIDATION_CONDITIONS = {
+    "aggregate_penalty_improves_at_least_10pct",
+    "required_directions_improve",
+    "beats_each_displacement_control",
+    "incremental_gain_over_best_control_at_least_1pct_baseline",
+    "coverage_unchanged_each_direction",
+    "p95_noninferiority",
+    "sheet_switch_gate",
 }
 
 
@@ -84,7 +104,7 @@ def _parse_frozen_tau(value: Any) -> float:
 
 
 def _require_sha256(value: Any, label: str) -> str:
-    normalized = str(value).lower()
+    normalized = str(value)
     if len(normalized) != 64 or any(
         character not in "0123456789abcdef" for character in normalized
     ):
@@ -92,19 +112,14 @@ def _require_sha256(value: Any, label: str) -> str:
     return normalized
 
 
-def validate_test_authorization(
+def _validate_authorization_envelope(
     authorization: dict[str, Any],
     current_commit: str,
     *,
-    validation_score: dict[str, Any],
-    validation_receipt: dict[str, Any],
     actual_validation_score_sha256: str,
     actual_validation_receipt_sha256: str,
-    expected_checkpoint_sha256: str,
-    expected_validation_manifest_sha256: str,
-    expected_copy_args: dict[str, Any],
-    authorization_now_utc: datetime | None = None,
-) -> tuple[float, float]:
+    authorization_now_utc: datetime | None,
+) -> None:
     if int(authorization.get("schema_version", -1)) != 1:
         raise ValueError("test authorization schema_version must be 1")
     if str(authorization.get("status")) != "authorized":
@@ -115,13 +130,6 @@ def validate_test_authorization(
         raise ValueError(
             "test authorization implementation_commit must equal the checked-out commit"
         )
-    selected = authorization.get("selected")
-    if not isinstance(selected, dict):
-        raise ValueError("test authorization must contain selected alpha/tau")
-    alpha = float(selected.get("alpha"))
-    tau = _parse_frozen_tau(selected.get("tau"))
-    if alpha not in ALPHA_GRID or tau not in TAU_GRID:
-        raise ValueError("test authorization selected parameters are outside the frozen grid")
     authorization_score_sha = _require_sha256(
         authorization.get("validation_score_sha256"),
         "test authorization validation_score_sha256",
@@ -138,9 +146,13 @@ def validate_test_authorization(
     if not overlap_audit_utc:
         raise ValueError("test authorization must record overlap_audit_utc")
     try:
-        parsed_audit_time = datetime.fromisoformat(overlap_audit_utc.replace("Z", "+00:00"))
+        parsed_audit_time = datetime.fromisoformat(
+            overlap_audit_utc.replace("Z", "+00:00")
+        )
     except ValueError as exc:
-        raise ValueError("test authorization overlap_audit_utc must be ISO-8601") from exc
+        raise ValueError(
+            "test authorization overlap_audit_utc must be ISO-8601"
+        ) from exc
     if parsed_audit_time.tzinfo is None:
         raise ValueError("test authorization overlap_audit_utc must include a timezone")
     reference_time = authorization_now_utc or datetime.now(timezone.utc)
@@ -155,6 +167,74 @@ def validate_test_authorization(
     if not public_url.startswith("https://github.com/"):
         raise ValueError("test authorization validation_public_url must be a GitHub URL")
 
+
+def _validate_validation_receipt(
+    validation_receipt: dict[str, Any],
+    current_commit: str,
+    *,
+    expected_checkpoint_sha256: str,
+    expected_validation_manifest_sha256: str,
+    expected_copy_args: dict[str, Any],
+) -> None:
+    expected_checkpoint_sha256 = _require_sha256(
+        expected_checkpoint_sha256, "expected checkpoint SHA-256"
+    )
+    expected_validation_manifest_sha256 = _require_sha256(
+        expected_validation_manifest_sha256, "expected validation manifest SHA-256"
+    )
+    if (
+        validation_receipt.get("completed") is not True
+        or validation_receipt.get("phase") != "validation"
+        or validation_receipt.get("scroll_id") != "PHerc0500P2"
+    ):
+        raise ValueError("validation receipt is not a complete PHerc0500P2 validation run")
+    if str(validation_receipt.get("implementation_commit")) != str(current_commit):
+        raise ValueError("validation receipt implementation commit does not match test code")
+    if str(validation_receipt.get("checkpoint_sha256")) != expected_checkpoint_sha256:
+        raise ValueError("validation receipt checkpoint does not match the frozen checkpoint")
+    if str(validation_receipt.get("manifest_sha256")) != expected_validation_manifest_sha256:
+        raise ValueError("validation receipt does not use the frozen validation manifest")
+    if validation_receipt.get("requested_copy_args") != expected_copy_args:
+        raise ValueError(
+            "sealed-test copy_args must exactly match the validation inference settings"
+        )
+    receipt_sources = validation_receipt.get("sources")
+    if (
+        not isinstance(receipt_sources, list)
+        or len(receipt_sources) != 3
+        or not all(isinstance(item, dict) for item in receipt_sources)
+        or {int(item.get("wrap", -1)) for item in receipt_sources} != {5, 6, 7}
+    ):
+        raise ValueError("validation receipt does not contain source wraps 5, 6, and 7")
+
+
+def validate_test_authorization(
+    authorization: dict[str, Any],
+    current_commit: str,
+    *,
+    validation_score: dict[str, Any],
+    validation_receipt: dict[str, Any],
+    actual_validation_score_sha256: str,
+    actual_validation_receipt_sha256: str,
+    expected_checkpoint_sha256: str,
+    expected_validation_manifest_sha256: str,
+    expected_copy_args: dict[str, Any],
+    authorization_now_utc: datetime | None = None,
+) -> tuple[float, float]:
+    _validate_authorization_envelope(
+        authorization,
+        current_commit,
+        actual_validation_score_sha256=actual_validation_score_sha256,
+        actual_validation_receipt_sha256=actual_validation_receipt_sha256,
+        authorization_now_utc=authorization_now_utc,
+    )
+    selected = authorization.get("selected")
+    if not isinstance(selected, dict):
+        raise ValueError("test authorization must contain selected alpha/tau")
+    alpha = float(selected.get("alpha"))
+    tau = _parse_frozen_tau(selected.get("tau"))
+    if alpha not in ALPHA_GRID or tau not in TAU_GRID:
+        raise ValueError("test authorization selected parameters are outside the frozen grid")
     expected_checkpoint_sha256 = _require_sha256(
         expected_checkpoint_sha256, "expected checkpoint SHA-256"
     )
@@ -184,9 +264,10 @@ def validate_test_authorization(
         or len(direction_identity) != 4
         or not all(isinstance(item, dict) for item in direction_identity)
         or {
-        (int(item.get("source", -1)), int(item.get("target", -1)))
-        for item in direction_identity
-        } != expected_directions
+            (int(item.get("source", -1)), int(item.get("target", -1)))
+            for item in direction_identity
+        }
+        != expected_directions
     ):
         raise ValueError("validation score does not contain the four frozen directions")
     result = validation_score.get("result")
@@ -200,31 +281,247 @@ def validate_test_authorization(
     ) != (alpha, tau):
         raise ValueError("authorization parameters do not match validation selection")
 
-    if (
-        validation_receipt.get("completed") is not True
-        or validation_receipt.get("phase") != "validation"
-        or validation_receipt.get("scroll_id") != "PHerc0500P2"
-    ):
-        raise ValueError("validation receipt is not a complete PHerc0500P2 validation run")
-    if str(validation_receipt.get("implementation_commit")) != str(current_commit):
-        raise ValueError("validation receipt implementation commit does not match test code")
-    if str(validation_receipt.get("checkpoint_sha256")) != expected_checkpoint_sha256:
-        raise ValueError("validation receipt checkpoint does not match the frozen checkpoint")
-    if str(validation_receipt.get("manifest_sha256")) != expected_validation_manifest_sha256:
-        raise ValueError("validation receipt does not use the frozen validation manifest")
-    if validation_receipt.get("requested_copy_args") != expected_copy_args:
-        raise ValueError(
-            "sealed-test copy_args must exactly match the validation inference settings"
-        )
-    receipt_sources = validation_receipt.get("sources")
-    if (
-        not isinstance(receipt_sources, list)
-        or len(receipt_sources) != 3
-        or not all(isinstance(item, dict) for item in receipt_sources)
-        or {int(item.get("wrap", -1)) for item in receipt_sources} != {5, 6, 7}
-    ):
-        raise ValueError("validation receipt does not contain source wraps 5, 6, and 7")
+    _validate_validation_receipt(
+        validation_receipt,
+        current_commit,
+        expected_checkpoint_sha256=expected_checkpoint_sha256,
+        expected_validation_manifest_sha256=expected_validation_manifest_sha256,
+        expected_copy_args=expected_copy_args,
+    )
     return alpha, tau
+
+
+def _finite_metric(payload: dict[str, Any], key: str, label: str) -> float:
+    try:
+        value = float(payload[key])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError(f"{label} must contain numeric {key}") from exc
+    if not math.isfinite(value):
+        raise ValueError(f"{label} {key} must be finite")
+    return value
+
+
+def _validate_learned_validation_gate(validation_score: dict[str, Any]) -> None:
+    expected_directions = {(5, 6), (6, 5), (6, 7), (7, 6)}
+    directions = validation_score.get("directions")
+    if (
+        not isinstance(directions, list)
+        or len(directions) != 4
+        or not all(isinstance(item, dict) for item in directions)
+        or {
+            (int(item.get("source", -1)), int(item.get("target", -1)))
+            for item in directions
+        }
+        != expected_directions
+    ):
+        raise ValueError("learned validation score does not contain the four frozen directions")
+
+    arm_names = {
+        "baseline",
+        "combined",
+        "displacement_only",
+        "cycle_only",
+        "fitted_scalar",
+        "physical_scalar",
+    }
+    improved_directions = 0
+    for direction in directions:
+        arms = direction.get("arms")
+        if not isinstance(arms, dict) or set(arms) != arm_names:
+            raise ValueError("learned validation direction is missing a frozen score arm")
+        if not all(isinstance(arms[name], dict) for name in arm_names):
+            raise ValueError("learned validation arm metrics must be objects")
+        baseline = arms["baseline"]
+        combined = arms["combined"]
+        baseline_penalty = _finite_metric(
+            baseline, "penalized_target_distance_mean", "baseline direction"
+        )
+        candidate_penalty = _finite_metric(
+            combined, "penalized_target_distance_mean", "combined direction"
+        )
+        improved_directions += candidate_penalty < baseline_penalty
+        try:
+            baseline_valid = int(baseline["valid_prediction_cells"])
+            candidate_valid = int(combined["valid_prediction_cells"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                "learned validation directions must record valid prediction cells"
+            ) from exc
+        if candidate_valid != baseline_valid:
+            raise ValueError("learned validation changed prediction coverage")
+    if improved_directions < 3:
+        raise ValueError("learned validation improves fewer than three frozen directions")
+
+    aggregate = validation_score.get("aggregate")
+    if not isinstance(aggregate, dict) or set(aggregate) != arm_names:
+        raise ValueError("learned validation aggregate is missing a frozen score arm")
+    if not all(isinstance(aggregate[name], dict) for name in arm_names):
+        raise ValueError("learned validation aggregate arms must be objects")
+    baseline = aggregate["baseline"]
+    combined = aggregate["combined"]
+    baseline_penalty = _finite_metric(
+        baseline, "penalized_target_distance_mean", "baseline aggregate"
+    )
+    candidate_penalty = _finite_metric(
+        combined, "penalized_target_distance_mean", "combined aggregate"
+    )
+    if baseline_penalty <= 0.0 or candidate_penalty > 0.9 * baseline_penalty:
+        raise ValueError("learned validation does not improve aggregate penalty by 10%")
+    control_penalties = [
+        _finite_metric(
+            aggregate[name], "penalized_target_distance_mean", f"{name} aggregate"
+        )
+        for name in ("displacement_only", "fitted_scalar", "physical_scalar")
+    ]
+    if not all(candidate_penalty < penalty for penalty in control_penalties):
+        raise ValueError("learned validation does not beat every displacement control")
+    if min(control_penalties) - candidate_penalty < 0.01 * baseline_penalty:
+        raise ValueError(
+            "learned validation lacks the frozen incremental gain over controls"
+        )
+    baseline_p95 = _finite_metric(
+        baseline, "target_distance_p95_valid", "baseline aggregate"
+    )
+    candidate_p95 = _finite_metric(
+        combined, "target_distance_p95_valid", "combined aggregate"
+    )
+    if candidate_p95 > 1.05 * baseline_p95:
+        raise ValueError("learned validation fails p95 non-inferiority")
+    baseline_switch = _finite_metric(
+        baseline, "sheet_switch_rate_all_eligible", "baseline aggregate"
+    )
+    candidate_switch = _finite_metric(
+        combined, "sheet_switch_rate_all_eligible", "combined aggregate"
+    )
+    switch_passed = (
+        candidate_switch <= 0.75 * baseline_switch
+        if baseline_switch >= 0.005
+        else candidate_switch <= baseline_switch + 0.001
+    )
+    if not switch_passed:
+        raise ValueError("learned validation fails the sheet-switch gate")
+
+    gate = validation_score.get("gate")
+    conditions = gate.get("conditions") if isinstance(gate, dict) else None
+    try:
+        required_improved_directions = int(gate["required_improved_directions"])
+        recorded_improved_directions = int(gate["improved_directions"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("learned validation gate direction counts are invalid") from exc
+    if (
+        not isinstance(conditions, dict)
+        or set(conditions) != _LEARNED_VALIDATION_CONDITIONS
+        or any(value is not True for value in conditions.values())
+        or gate.get("passed") is not True
+        or required_improved_directions != 3
+        or recorded_improved_directions != improved_directions
+    ):
+        raise ValueError("learned validation score does not pass every frozen gate")
+
+
+def validate_learned_test_authorization(
+    authorization: dict[str, Any],
+    current_commit: str,
+    *,
+    calibration_model: CalibrationBundle,
+    validation_score: dict[str, Any],
+    validation_receipt: dict[str, Any],
+    actual_calibration_model_sha256: str,
+    actual_validation_score_sha256: str,
+    actual_validation_receipt_sha256: str,
+    expected_checkpoint_sha256: str,
+    expected_validation_manifest_sha256: str,
+    expected_copy_args: dict[str, Any],
+    authorization_now_utc: datetime | None = None,
+) -> dict[str, str]:
+    _validate_authorization_envelope(
+        authorization,
+        current_commit,
+        actual_validation_score_sha256=actual_validation_score_sha256,
+        actual_validation_receipt_sha256=actual_validation_receipt_sha256,
+        authorization_now_utc=authorization_now_utc,
+    )
+    if authorization.get("method") != _LEARNED_METHOD:
+        raise ValueError(f"learned test authorization method must be {_LEARNED_METHOD}")
+    actual_model_sha = _require_sha256(
+        actual_calibration_model_sha256, "actual calibration model SHA-256"
+    )
+    authorization_model_sha = _require_sha256(
+        authorization.get("calibration_model_sha256"),
+        "test authorization calibration_model_sha256",
+    )
+    if authorization_model_sha != actual_model_sha:
+        raise ValueError("test authorization calibration model file SHA-256 mismatch")
+
+    expected_checkpoint_sha256 = _require_sha256(
+        expected_checkpoint_sha256, "expected checkpoint SHA-256"
+    )
+    expected_validation_manifest_sha256 = _require_sha256(
+        expected_validation_manifest_sha256, "expected validation manifest SHA-256"
+    )
+    if calibration_model.implementation_commit != current_commit:
+        raise ValueError("calibration model was produced by a different implementation commit")
+    if calibration_model.training.get("stage") != "final":
+        raise ValueError("sealed test requires the frozen final calibration model")
+    for model in (
+        calibration_model.combined,
+        calibration_model.displacement_only,
+        calibration_model.cycle_only,
+    ):
+        if not math.isclose(model.ridge, FROZEN_RIDGE, rel_tol=0.0, abs_tol=0.0):
+            raise ValueError("calibration model ridge differs from the frozen protocol")
+        if not math.isclose(
+            model.correction_cap,
+            FROZEN_CORRECTION_CAP,
+            rel_tol=0.0,
+            abs_tol=0.0,
+        ):
+            raise ValueError("calibration model cap differs from the frozen protocol")
+    training_signature = training_inference_signature(calibration_model.training)
+    if training_signature["scroll_id"] != "PHerc0500P2":
+        raise ValueError("calibration model was not trained on PHerc0500P2")
+    if training_signature["inference_implementation_commit"] != current_commit:
+        raise ValueError("calibration training inference used a different implementation commit")
+    if training_signature["checkpoint_sha256"] != expected_checkpoint_sha256:
+        raise ValueError("calibration training used a different checkpoint")
+    if training_signature["manifest_sha256"] != expected_validation_manifest_sha256:
+        raise ValueError("calibration training used a different PHerc0500P2 manifest")
+    if training_signature["requested_copy_args"] != expected_copy_args:
+        raise ValueError("calibration training copy_args differ from sealed-test copy_args")
+
+    if (
+        int(validation_score.get("schema_version", -1)) != 1
+        or validation_score.get("method") != _LEARNED_SCORE_METHOD
+        or validation_score.get("stage") != "validation"
+        or validation_score.get("scroll_id") != "PHerc0500P2"
+    ):
+        raise ValueError("authorization requires the learned PHerc0500P2 validation score")
+    if str(validation_score.get("implementation_commit")) != current_commit:
+        raise ValueError("learned validation score implementation commit does not match test code")
+    if str(validation_score.get("model_sha256")) != actual_model_sha:
+        raise ValueError("learned validation score is not bound to the calibration model")
+    if str(validation_score.get("manifest_sha256")) != expected_validation_manifest_sha256:
+        raise ValueError("learned validation score does not use the frozen manifest")
+    score_receipts = validation_score.get("receipts")
+    if (
+        not isinstance(score_receipts, list)
+        or len(score_receipts) != 1
+        or not isinstance(score_receipts[0], dict)
+        or str(score_receipts[0].get("sha256"))
+        != actual_validation_receipt_sha256
+    ):
+        raise ValueError("learned validation score is not bound to the supplied receipt")
+    _validate_learned_validation_gate(validation_score)
+    _validate_validation_receipt(
+        validation_receipt,
+        current_commit,
+        expected_checkpoint_sha256=expected_checkpoint_sha256,
+        expected_validation_manifest_sha256=expected_validation_manifest_sha256,
+        expected_copy_args=expected_copy_args,
+    )
+    if inference_receipt_signature(validation_receipt) != training_signature:
+        raise ValueError("learned validation inference provenance differs from training")
+    return {"method": _LEARNED_METHOD, "model_sha256": actual_model_sha}
 
 
 def load_and_validate_test_authorization(
@@ -234,7 +531,7 @@ def load_and_validate_test_authorization(
     expected_checkpoint_sha256: str,
     expected_validation_manifest_sha256: str,
     expected_copy_args: dict[str, Any],
-) -> tuple[float, float]:
+) -> dict[str, Any]:
     authorization = _load_json(authorization_path)
     for key in ("validation_score_path", "validation_receipt_path"):
         if not isinstance(authorization.get(key), str) or not authorization[key].strip():
@@ -247,17 +544,44 @@ def load_and_validate_test_authorization(
     )
     actual_score_sha256 = sha256_file(score_path)
     actual_receipt_sha256 = sha256_file(receipt_path)
-    return validate_test_authorization(
+    validation_score = _load_json(score_path)
+    validation_receipt = _load_json(receipt_path)
+    method = authorization.get("method")
+    if method == _LEARNED_METHOD:
+        model_value = authorization.get("calibration_model_path")
+        if not isinstance(model_value, str) or not model_value.strip():
+            raise ValueError("learned test authorization must define calibration_model_path")
+        model_path = _resolve_path(authorization_path.parent, model_value)
+        return validate_learned_test_authorization(
+            authorization,
+            current_commit,
+            calibration_model=CalibrationBundle.from_json(_load_json(model_path)),
+            validation_score=validation_score,
+            validation_receipt=validation_receipt,
+            actual_calibration_model_sha256=sha256_file(model_path),
+            actual_validation_score_sha256=actual_score_sha256,
+            actual_validation_receipt_sha256=actual_receipt_sha256,
+            expected_checkpoint_sha256=expected_checkpoint_sha256,
+            expected_validation_manifest_sha256=expected_validation_manifest_sha256,
+            expected_copy_args=expected_copy_args,
+        )
+    if method not in (None, "copy_cycle_scalar_grid_v1"):
+        raise ValueError(f"unsupported test authorization method: {method!r}")
+    alpha, tau = validate_test_authorization(
         authorization,
         current_commit,
-        validation_score=_load_json(score_path),
-        validation_receipt=_load_json(receipt_path),
+        validation_score=validation_score,
+        validation_receipt=validation_receipt,
         actual_validation_score_sha256=actual_score_sha256,
         actual_validation_receipt_sha256=actual_receipt_sha256,
         expected_checkpoint_sha256=expected_checkpoint_sha256,
         expected_validation_manifest_sha256=expected_validation_manifest_sha256,
         expected_copy_args=expected_copy_args,
     )
+    return {
+        "alpha": alpha,
+        "tau": "infinity" if tau == float("inf") else tau,
+    }
 
 
 def validate_config_structure(
@@ -316,32 +640,6 @@ def validate_config_structure(
     return phase, sorted(sources)
 
 
-def _git_commit() -> str:
-    project_root = Path(__file__).resolve().parents[4]
-    process = subprocess.run(
-        ["git", "-C", str(project_root), "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    return process.stdout.strip()
-
-
-def _require_clean_worktree() -> None:
-    project_root = Path(__file__).resolve().parents[4]
-    process = subprocess.run(
-        ["git", "-C", str(project_root), "status", "--porcelain"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    if process.stdout.strip():
-        raise RuntimeError(
-            "copy-cycle inference requires a clean worktree so the receipt's commit "
-            "identifies the exact implementation"
-        )
-
-
 def _safe_prefix(value: str) -> str:
     normalized = re.sub(r"[^A-Za-z0-9_.-]+", "_", value).strip("_.")
     if not normalized:
@@ -398,15 +696,16 @@ def _runtime_versions() -> dict[str, Any]:
     }
 
 
-def run_experiment(config_path: Path, test_authorization_path: Path | None = None) -> dict[str, Any]:
+def run_experiment(
+    config_path: Path, test_authorization_path: Path | None = None
+) -> dict[str, Any]:
     config_path = config_path.resolve()
     config_dir = config_path.parent
     config = _load_json(config_path)
     manifest_path = _resolve_path(config_dir, config.get("manifest"))
     manifest = load_manifest(manifest_path)
     phase, sources = validate_config_structure(config, manifest)
-    current_commit = _git_commit()
-    _require_clean_worktree()
+    current_commit = clean_git_commit(Path(__file__).resolve().parents[4])
     expected_checkpoint_sha256 = _require_sha256(
         config.get("checkpoint_sha256"), "config checkpoint_sha256"
     )
@@ -549,18 +848,7 @@ def run_experiment(config_path: Path, test_authorization_path: Path | None = Non
         "effective_copy_args": dict(vars(args)),
         "runtime": _runtime_versions(),
         "test_authorization_sha256": authorization_sha256,
-        "selected_parameters": (
-            None
-            if selected_parameters is None
-            else {
-                "alpha": selected_parameters[0],
-                "tau": (
-                    "infinity"
-                    if selected_parameters[1] == float("inf")
-                    else selected_parameters[1]
-                ),
-            }
-        ),
+        "selected_parameters": selected_parameters,
         "sources": [],
     }
     receipt_path = output_root / "run_receipt.json"

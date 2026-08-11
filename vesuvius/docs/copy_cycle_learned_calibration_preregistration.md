@@ -39,7 +39,10 @@ the frozen development holdout, containing directions `3 -> 2`, `3 -> 4`, and
 ## Frozen model
 
 For each valid source cell, construct an orthonormal chart frame from local
-column and row tangents and `cross(column, row)`. Express vectors in that frame.
+column and row tangents and `cross(column, row)`. Interior tangents use central
+differences; a lattice edge or one-sided hole uses the available immediate
+neighbor. Gram-Schmidt removes the column component from the row tangent.
+Degenerate frames are not calibrated. Express vectors in that frame.
 The six inputs are, in order:
 
 1. round-trip vector `Z - X` (three local components); and
@@ -53,6 +56,12 @@ At inference, transform the predicted correction back to world coordinates
 and cap its Euclidean norm at `8.0` effective voxels. Cells without a valid
 local frame or round trip retain the baseline prediction, so the method never
 improves a score by deleting support.
+
+All fitted arms use the same training rows: baseline-eligible cells with a
+finite forward prediction, selected return prediction, and local frame. At
+application time, the combined and cycle-only arms require a return prediction;
+the displacement-only arms apply wherever their forward inputs are valid. No
+application mask uses target ground truth.
 
 The implementation must deterministically serialize feature RMS values,
 coefficients, training receipt hashes, manifest hash, implementation commit,
@@ -69,9 +78,15 @@ The same source-1/2 training rows and source-3/4 holdout rows must score:
   and cap;
 - a three-feature local cycle-only ridge model with the same penalty and cap;
 - the physical scalar-resolution control that multiplies forward displacement
-  by `4.8 / 4.317`; and
+  by `4.8 / 4.317`, without a correction cap; and
 - a training-fitted scalar displacement control, with no intercept and the
   same 8-voxel correction cap.
+
+The fitted scalar correction is
+`beta = sum((Y-X) dot (target-Y)) / sum(||Y-X||^2)` on the common local-frame
+training rows and produces `Y + beta * (Y-X)`. The physical scalar produces
+`X + (4.8 / effective_voxel_size_um) * (Y-X)`. Both apply to every finite
+forward cell; only the fitted scalar correction is capped.
 
 Villa PR #1284 already implements optional scalar displacement scaling. Scalar
 or displacement-only gains are therefore controls, not novelty claims. The
@@ -105,6 +120,11 @@ pass conditions 1 and 3-7 above, improve at least three of four directions,
 and retain the original v1 coverage requirements per direction. A positive
 validation receipt must be public before the unseen PHerc0343P test is
 authorized.
+
+The authorization must bind the exact final-model, validation-score, and
+validation-receipt SHA-256 values to the unchanged implementation commit. The
+sealed inference receipt records that model SHA, and sealed scoring must reject
+any other model.
 
 PHerc0343P remains sealed if either development holdout or validation fails.
 No world-coordinate model, new feature, changed ridge penalty, changed cap, or

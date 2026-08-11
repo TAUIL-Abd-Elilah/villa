@@ -7,10 +7,38 @@ import json
 import math
 import os
 from pathlib import Path
+import re
+import subprocess
 import tempfile
 from typing import Any
 
 import numpy as np
+
+
+def clean_git_commit(project_root: str | Path) -> str:
+    """Return HEAD only when it exactly identifies a clean worktree."""
+
+    root = Path(project_root).resolve()
+    revision = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if re.fullmatch(r"[0-9a-f]{40}", revision) is None:
+        raise RuntimeError(f"git returned an invalid full commit for {root}: {revision!r}")
+    status = subprocess.run(
+        ["git", "-C", str(root), "status", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    if status.strip():
+        raise RuntimeError(
+            "copy-cycle execution requires a clean worktree so the recorded "
+            "commit identifies the exact implementation"
+        )
+    return revision
 
 
 def load_tifxyz_grid(
