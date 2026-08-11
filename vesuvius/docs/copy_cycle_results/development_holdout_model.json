@@ -1,0 +1,202 @@
+{
+  "combined": {
+    "coefficients": [
+      [
+        -2.9042530156206925,
+        -0.00573811040538052,
+        -1.0931560053700093
+      ],
+      [
+        -2.2191244253732805,
+        -0.382208662270192,
+        0.3343406641147522
+      ],
+      [
+        0.809016047302618,
+        -1.0011778231103967,
+        -2.587409554350708
+      ],
+      [
+        0.8868590479403264,
+        -0.27625129363168266,
+        -0.9690930609031626
+      ],
+      [
+        2.6844342540977433,
+        0.2547911172589938,
+        0.27882648940668286
+      ],
+      [
+        2.2834444632066786,
+        -0.13917969551260576,
+        4.9539704085471605
+      ]
+    ],
+    "correction_cap": 8.0,
+    "feature_order": [
+      "cycle_column",
+      "cycle_row",
+      "cycle_normal",
+      "displacement_column",
+      "displacement_row",
+      "displacement_normal"
+    ],
+    "mode": "cycle_displacement",
+    "ridge": 10.0,
+    "rms": [
+      10.133978930828397,
+      9.346083785285714,
+      15.280237214490363,
+      11.968165178869002,
+      14.824231733670349,
+      35.79747851922479
+    ],
+    "schema_version": 1,
+    "type": "local_no_intercept_ridge"
+  },
+  "copy_training_voxel_size_um": 4.8,
+  "cycle_only": {
+    "coefficients": [
+      [
+        -2.374405680114191,
+        -0.20534602348435477,
+        -2.4007657215460965
+      ],
+      [
+        -0.24423899828490073,
+        -0.1733597228802303,
+        -0.06652475556293821
+      ],
+      [
+        2.284845626868724,
+        -1.0951762163975054,
+        0.811720133746619
+      ]
+    ],
+    "correction_cap": 8.0,
+    "feature_order": [
+      "cycle_column",
+      "cycle_row",
+      "cycle_normal"
+    ],
+    "mode": "cycle",
+    "ridge": 10.0,
+    "rms": [
+      10.133978930828397,
+      9.346083785285714,
+      15.280237214490363
+    ],
+    "schema_version": 1,
+    "type": "local_no_intercept_ridge"
+  },
+  "displacement_only": {
+    "coefficients": [
+      [
+        -1.0142276003819153,
+        -0.4634140961389373,
+        -2.4129260378677624
+      ],
+      [
+        1.2380582853271396,
+        -0.09971876645827671,
+        0.568600007834843
+      ],
+      [
+        2.5577086952437016,
+        -0.7799068726026754,
+        3.220914164602283
+      ]
+    ],
+    "correction_cap": 8.0,
+    "feature_order": [
+      "displacement_column",
+      "displacement_row",
+      "displacement_normal"
+    ],
+    "mode": "displacement",
+    "ridge": 10.0,
+    "rms": [
+      11.968165178869002,
+      14.824231733670349,
+      35.79747851922479
+    ],
+    "schema_version": 1,
+    "type": "local_no_intercept_ridge"
+  },
+  "fitted_scalar_beta": 0.058763388200015365,
+  "implementation_commit": "3530ecfb31635ede8e776f6eb60311d5b9017afe",
+  "method": "copy_cycle_local_linear_v1",
+  "schema_version": 1,
+  "training": {
+    "checkpoint_sha256": "22cf4392f2f61e6a5548c7b68148e97fed4ee772abf4f842cc6b8d1ef3ca1370",
+    "crop_size": [
+      128,
+      384,
+      384
+    ],
+    "directions": [
+      "1->2",
+      "2->1",
+      "2->3"
+    ],
+    "inference_implementation_commit": "65e7ea1c9db5a4a215a0dfb7e965a63f90c40379",
+    "manifest_sha256": "c41622dd79bf02f7bcd451252bee4d2f635470b5547cf14b388dabc0a03d1264",
+    "receipts": [
+      {
+        "path": "D:\\Competition\\Vesuvius progress prizes\\data\\neural_copy_cycle\\development-source01-65e7ea1c9-dmerge\\run_receipt.json",
+        "sha256": "9d2868e7797030a49622cbd34f6db30a6cab76e7e1c0b30c6b32fd2d3939e4e7"
+      },
+      {
+        "path": "D:\\Competition\\Vesuvius progress prizes\\data\\neural_copy_cycle\\development-source02-65e7ea1c9-dmerge\\run_receipt.json",
+        "sha256": "551421f76dccf67cc71cd52ba27d3d65067fe4a26f7949b322738546833944bb"
+      }
+    ],
+    "requested_copy_args": {
+      "batch_size": 1,
+      "bbox_band_workers": 4,
+      "compile_model": false,
+      "crop_input_workers": 1,
+      "device": "cuda",
+      "merge_temp_dir": "D:/Competition/Vesuvius progress prizes/data/neural_copy_cycle/merge-temp",
+      "tta": true,
+      "tta_batch_size": 2,
+      "tta_merge_method": "vector_geomedian",
+      "tta_transform": "mirror",
+      "verbose": true,
+      "volume_cache_dir": "D:/Competition/Vesuvius progress prizes/data/neural_copy_cycle/volume-cache",
+      "volume_cache_retry_seconds": 60,
+      "volume_chunk_cache_gb": 12
+    },
+    "rows_by_direction": {
+      "1->2": 356,
+      "2->1": 480,
+      "2->3": 1056
+    },
+    "runtime": {
+      "cuda_available": true,
+      "cuda_device_0": "NVIDIA GeForce RTX 3090",
+      "executable": "C:\\Users\\PC\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+      "fsspec": "2026.4.0",
+      "numcodecs": "0.16.5",
+      "platform": "win32",
+      "python": "3.13.5 (tags/v3.13.5:6cb20a2, Jun 11 2025, 16:15:46) [MSC v.1943 64 bit (AMD64)]",
+      "s3fs": "2026.4.0",
+      "torch": "2.10.0+cu130",
+      "torch_cuda": "13.0",
+      "volume_cartographer": null,
+      "zarr": "3.2.1"
+    },
+    "scroll_id": "PHerc0500P2",
+    "sources": [
+      1,
+      2
+    ],
+    "stage": "holdout",
+    "tifxyz_voxel_size_um": 4.317,
+    "total_rows": 1892,
+    "volume_backend": "zarr",
+    "volume_path": "https://vesuvius-challenge-open-data.s3.amazonaws.com/PHerc0500P2/volumes/20250528085330-4.317um-1.2m-111keV-masked.zarr/",
+    "volume_scale_requested": 0,
+    "volume_scale_resolved": 0
+  }
+}

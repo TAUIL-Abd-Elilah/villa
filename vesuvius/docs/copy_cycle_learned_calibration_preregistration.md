@@ -2,6 +2,10 @@
 
 Status: **locked before scoring source wraps 3 and 4** on 2026-08-11.
 
+Post-lock outcome: the untouched holdout improved by 6.28%, but failed the frozen 10%
+aggregate and 25% relative sheet-switch gates. The lane stopped before validation. See
+the [complete holdout result](copy_cycle_learned_calibration_holdout_result.md).
+
 The preregistered scalar cycle correction in
 `copy_cycle_guard_preregistration.md` was negative on the first three
 development directions. This extension asks a different, explicitly
