@@ -1,0 +1,32 @@
+PR #1483 real-scroll preprocessing replay
+
+BEFORE - ScrollPrize/villa main @ 81f6a8ffb4b9b39ac2d67f673af29bfe25f19eb7
+Villa flat robust-MAD real-scroll parity check
+source_scroll=PHerc0139
+source_uri=s3://vesuvius-challenge-open-data/PHerc0139/volumes/20250728140407-9.362um-1.2m-113keV-masked.zarr
+source_cube_sha256=d4bd2dfaf5ee1518560e15ac767b76ea836bf43e0a96a8be92445e5082e73dc3
+source_global_l0_zyx=[4352:4480,3072:3200,2560:2688]
+replay=local_z[62:65] centered into depth 5
+source_nonzero_fraction=0.999878
+real_voxel_mae_vs_training=0.811289
+real_voxel_max_abs_vs_training=3.352918
+nonzero_padded_voxels=32768/32768
+metadata=[0,0,128,128,1]
+RESULT=FAIL
+ERROR: flat inference input differs from training semantics
+process_exit=1
+
+AFTER - PR #1483 @ e23f677f9e2a39ad49304847a3abcc05e8baf99d
+Villa flat robust-MAD real-scroll parity check
+source_scroll=PHerc0139
+source_uri=s3://vesuvius-challenge-open-data/PHerc0139/volumes/20250728140407-9.362um-1.2m-113keV-masked.zarr
+source_cube_sha256=d4bd2dfaf5ee1518560e15ac767b76ea836bf43e0a96a8be92445e5082e73dc3
+source_global_l0_zyx=[4352:4480,3072:3200,2560:2688]
+replay=local_z[62:65] centered into depth 5
+source_nonzero_fraction=0.999878
+real_voxel_mae_vs_training=0.000000
+real_voxel_max_abs_vs_training=0.000000
+nonzero_padded_voxels=0/32768
+metadata=[0,0,128,128,1]
+RESULT=PASS
+process_exit=0
