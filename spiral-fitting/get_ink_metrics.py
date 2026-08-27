@@ -56,6 +56,7 @@ import math
 import time
 import shutil
 import argparse
+import importlib
 import subprocess
 import multiprocessing
 
@@ -87,6 +88,45 @@ DEFAULT_MODEL = 'scrollprize/ink-coverage-32um'
 DEFAULT_CHECKPOINT = 'checkpoint_final.pth'
 
 IMAGE_EXTS = ('.jpg', '.jpeg', '.png', '.tif', '.tiff', '.bmp')
+
+
+def configure_worker_start_method():
+    """Use nnU-Net's preferred fork start method, with a Windows fallback."""
+    available = multiprocessing.get_all_start_methods()
+    method = 'fork' if 'fork' in available else 'spawn'
+    try:
+        multiprocessing.set_start_method(method, force=True)
+    except (RuntimeError, ValueError):
+        # Embedded runtimes can lock the context before worker setup.  The
+        # worker still has a usable platform default, so do not fail before
+        # nnU-Net gets a chance to report a real inference error.
+        pass
+    return method
+
+
+def install_public_trainer_lookup(finder=None):
+    """Resolve the trainer recorded by the public ink model without a tree scan.
+
+    Some nnU-Net installations contain optional legacy trainer modules whose
+    imports fail while ``recursive_find_python_class`` scans the entire trainer
+    tree.  The public checkpoint records the standard 250-epoch variant, whose
+    canonical module is known.  Only that exact lookup is short-circuited; every
+    other trainer keeps nnU-Net's normal discovery path.
+    """
+    if finder is None:
+        import nnunetv2.utilities.find_class_by_name as finder
+    recursive_find = finder.recursive_find_python_class
+
+    def safe_find(folder, class_name, current_module):
+        if class_name == 'nnUNetTrainer_250epochs':
+            module = importlib.import_module(
+                'nnunetv2.training.nnUNetTrainer.variants.training_length.'
+                'nnUNetTrainer_Xepochs')
+            return getattr(module, class_name)
+        return recursive_find(folder, class_name, current_module)
+
+    finder.recursive_find_python_class = safe_find
+    return safe_find
 
 
 def set_nnunet_env():
@@ -131,15 +171,12 @@ def run_worker(argv):
     ap.add_argument('--procs', type=int, default=8)
     args = ap.parse_args(argv)
 
-    # nnU-Net was written assuming the fork start method; Python 3.14 defaults to
-    # forkserver, which re-imports the main module in every pool worker (slow, and it
-    # trips over non-file mains). Force fork to restore the behaviour nnU-Net expects.
-    try:
-        multiprocessing.set_start_method('fork', force=True)
-    except RuntimeError:
-        pass
+    # Prefer fork where it exists; Windows exposes only spawn and rejects the
+    # literal 'fork' before model loading.
+    configure_worker_start_method()
 
     set_nnunet_env()
+    install_public_trainer_lookup()
     import torch
     from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
 
