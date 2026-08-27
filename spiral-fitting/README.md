@@ -268,6 +268,28 @@ Changing one requires a whole-fit rebuild. Disabling a prerequisite also
 disables its dependent supervision: phase spacing needs normals and surface
 SDT, while winding inference needs the outer shell.
 
+Large machine-generated patch families can be kept without allowing their
+entry count to overwhelm larger hand-reviewed surfaces. Set
+`patch_uuid_sampling_cap_regex` to identify the family and
+`patch_uuid_sampling_cap_fraction` to its maximum aggregate draw probability.
+For example, this keeps the Paris 4 `band-seed` evidence but limits it to 25%
+of draws. The cap is applied independently to the verified and unverified
+patch samplers, and area weighting is preserved within each matched and
+unmatched pool:
+
+```json
+{
+  "patch_uuid_sampling_cap_regex": "^band-seed",
+  "patch_uuid_sampling_cap_fraction": 0.25
+}
+```
+
+The cap is run-boundary configuration and can be changed without reloading
+patch geometry. A missing regex, a cap of `1`, or a family whose natural share
+is already below the cap leaves the historical sampler unchanged. If every
+patch in a sampler matches, Spiral emits a warning and leaves that sampler
+unchanged because there is no complementary pool to receive probability.
+
 While a session is active you can right-click a patch in the Surface panel or
 a fiber in the Fibers panel and pick *Add to current spiral fit*. Added inputs
 are uploaded into a session-scoped ephemeral folder, used from the next run

@@ -24,6 +24,7 @@ _NULL_TYPES = {
     "track_max_tortuosity": "number",
     "loss_start_track_dt": "integer",
     "loss_start_unverified_patch_dt": "number",
+    "patch_uuid_sampling_cap_regex": "string",
     "patch_uuid_filter_regex": "string",
 }
 
@@ -119,12 +120,15 @@ _INPUT_TOGGLE_DESCRIPTIONS = {
         "Allow outer-shell losses, lookup maps, and shell-based track filtering.",
 }
 
-# These fields were added after durable checkpoints already existed. Missing
-# values are unambiguous: historical fits used every available input, so a
-# missing toggle means True. Checkpoint readers use this mapping instead of
-# weakening strict schema checks for unrelated future fields.
+# These fields were added after durable checkpoints already existed. Their
+# historical values are unambiguous, so checkpoint readers use this mapping
+# instead of weakening strict schema checks for unrelated future fields.
 BACKFILLABLE_CONFIG_DEFAULTS = {
-    key: True for key in _INPUT_TOGGLE_DESCRIPTIONS
+    **{key: True for key in _INPUT_TOGGLE_DESCRIPTIONS},
+    # These sampling controls are inert at their defaults, so old checkpoints
+    # have one unambiguous interpretation under the expanded schema.
+    "patch_uuid_sampling_cap_regex": None,
+    "patch_uuid_sampling_cap_fraction": 1.0,
 }
 
 # Configuration keys that shape the model's parameter tensors. A checkpoint
@@ -234,8 +238,10 @@ def _field_spec(key, default):
                     "output_num_slices_for_visualization",
                     "theta_crossing_map_update_interval",
                 } else 0),
-            maximum=(1_000_000 if key == "output_num_slices_for_visualization"
-                     else 1_000_000_000),
+            maximum=(
+                1.0 if key == "patch_uuid_sampling_cap_fraction"
+                else 1_000_000 if key == "output_num_slices_for_visualization"
+                else 1_000_000_000),
             step=1 if kind == "integer" else .01,
         )
         if kind == "number":
@@ -333,6 +339,11 @@ class Config:
         # Exponent applied to patch areas when building patch sampling
         # probabilities: 0 = uniform, 1 = proportional to area.
         self.patch_sampling_area_exponent = 0.5
+        # Optionally cap the aggregate draw probability of one patch family,
+        # identified by re.search against its input id. Relative area weights
+        # within the matched and unmatched families remain unchanged.
+        self.patch_uuid_sampling_cap_regex = None
+        self.patch_uuid_sampling_cap_fraction = 1.0
         self.patch_erode_patches = 1
         # Rebuild-scoped supervision-source switches. A false value is a hard
         # participation gate: the source is not loaded, prepared, sampled, or

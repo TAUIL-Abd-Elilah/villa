@@ -1,5 +1,6 @@
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 import tempfile
 
@@ -344,6 +345,111 @@ class DevicePatchAtlasTests(unittest.TestCase):
         np.testing.assert_array_equal(actual, expected)
         self.assertFalse(np.shares_memory(actual, mask))
 
+    def test_patch_sampling_family_cap_preserves_within_family_area_weights(self):
+        from fit_spiral import FitContext
+
+        def patch(input_id, area):
+            return types.SimpleNamespace(_input_id=input_id,
+                                         _sampling_area=area, area=area)
+
+        patches = [
+            patch('band-seed-a', 1.0),
+            patch('band-seed-b', 9.0),
+            patch('reviewed-a', 4.0),
+            patch('reviewed-b', 16.0),
+        ]
+        context = FitContext.__new__(FitContext)
+        context.config = {
+            'patch_sampling_area_exponent': 0.5,
+            'patch_uuid_sampling_cap_regex': '^band-seed',
+            'patch_uuid_sampling_cap_fraction': 0.25,
+        }
+
+        probabilities = context._patch_sampling_probabilities(patches)
+
+        np.testing.assert_allclose(
+            probabilities, [0.0625, 0.1875, 0.25, 0.5], rtol=1e-6)
+        self.assertAlmostEqual(float(probabilities[:2].sum()), 0.25, places=6)
+        self.assertAlmostEqual(
+            float(probabilities[1] / probabilities[0]), 3.0, places=6)
+        self.assertAlmostEqual(
+            float(probabilities[3] / probabilities[2]), 2.0, places=6)
+
+    def test_patch_sampling_family_cap_is_only_a_cap(self):
+        from fit_spiral import FitContext
+
+        patches = [
+            types.SimpleNamespace(
+                uuid='band-seed-small', _sampling_area=1.0, area=1.0),
+            types.SimpleNamespace(
+                uuid='reviewed-large', _sampling_area=81.0, area=81.0),
+        ]
+        context = FitContext.__new__(FitContext)
+        context.config = {
+            'patch_sampling_area_exponent': 0.5,
+            'patch_uuid_sampling_cap_regex': '^band-seed',
+            'patch_uuid_sampling_cap_fraction': 0.25,
+        }
+
+        probabilities = context._patch_sampling_probabilities(patches)
+
+        np.testing.assert_allclose(probabilities, [0.1, 0.9], rtol=1e-6)
+
+    def test_patch_sampling_defaults_are_numerically_unchanged(self):
+        from fit_spiral import FitContext
+
+        patches = [
+            types.SimpleNamespace(_sampling_area=1.0, area=1.0),
+            types.SimpleNamespace(_sampling_area=9.0, area=9.0),
+        ]
+        context = FitContext.__new__(FitContext)
+        context.config = {'patch_sampling_area_exponent': 0.5}
+
+        probabilities = context._patch_sampling_probabilities(patches)
+
+        np.testing.assert_array_equal(
+            probabilities, np.asarray([0.25, 0.75], dtype=np.float32))
+
+    def test_patch_sampling_family_cap_warns_when_every_patch_matches(self):
+        from fit_spiral import FitContext
+
+        patches = [
+            types.SimpleNamespace(
+                _input_id='band-seed-a', _sampling_area=1.0, area=1.0),
+            types.SimpleNamespace(
+                _input_id='band-seed-b', _sampling_area=9.0, area=9.0),
+        ]
+        context = FitContext.__new__(FitContext)
+        context.config = {
+            'patch_sampling_area_exponent': 0.5,
+            'patch_uuid_sampling_cap_regex': '^band-seed',
+            'patch_uuid_sampling_cap_fraction': 0.25,
+        }
+
+        with mock.patch('builtins.print') as print_mock:
+            probabilities = context._patch_sampling_probabilities(patches)
+
+        np.testing.assert_allclose(probabilities, [0.25, 0.75], rtol=1e-6)
+        self.assertIn('matched all', print_mock.call_args.args[0])
+
+    def test_patch_sampling_family_cap_warns_when_no_patch_matches(self):
+        from fit_spiral import FitContext
+
+        patches = [types.SimpleNamespace(
+            _input_id='reviewed-a', _sampling_area=1.0, area=1.0)]
+        context = FitContext.__new__(FitContext)
+        context.config = {
+            'patch_sampling_area_exponent': 0.5,
+            'patch_uuid_sampling_cap_regex': '^band-seed',
+            'patch_uuid_sampling_cap_fraction': 0.25,
+        }
+
+        with mock.patch('builtins.print') as print_mock:
+            probabilities = context._patch_sampling_probabilities(patches)
+
+        np.testing.assert_array_equal(probabilities, [1.0])
+        self.assertIn('matched no patches', print_mock.call_args.args[0])
+
     def test_patch_atlas_registers_potential_for_every_valid_quad(self):
         from theta_crossing_map import ThetaCrossingMap
 
@@ -552,8 +658,9 @@ class DevicePatchAtlasTests(unittest.TestCase):
         atlas.register_theta_topology(crossing_map)
         crossing_map.force_refresh(lambda value: value)
         os.environ['FIT_SPIRAL_PREFETCH'] = '1'
+        probabilities = np.asarray([1.0, 0.0, 0.0])
+        replacement_probabilities = np.asarray([0.0, 0.0, 1.0])
         try:
-            probabilities = np.full(3, 1 / 3, dtype=np.float64)
             # First call runs inline and schedules the next batch; the second
             # pops the prefetched triple assembled on the worker thread.
             for _ in range(2):
@@ -566,10 +673,20 @@ class DevicePatchAtlasTests(unittest.TestCase):
                 expected = atlas.lookup(
                     idx_gpu[:, None].expand(4, 6), ijs_gpu)
                 torch.testing.assert_close(zyxs_gpu, expected)
+                self.assertTrue(bool((idx_gpu == 0).all()))
+
+            # A live sampler update must invalidate the pending batch rather
+            # than leak one step drawn from the old probabilities.
+            _, idx_gpu, _, _, _ = losses_module._sample_patch_batch(
+                'test_prefetch_patches', list(patches.values()),
+                replacement_probabilities, num_to_sample=4, point_cap=6,
+                cfg=cfg, patch_atlas=atlas, crossing_map=crossing_map)
+            self.assertTrue(bool((idx_gpu == 2).all()))
         finally:
             os.environ.pop('FIT_SPIRAL_PREFETCH', None)
             prefetch_module.get_prefetcher().drop(
-                ('test_prefetch_patches', id(crossing_map), 4, 6))
+                ('test_prefetch_patches', id(crossing_map),
+                 id(replacement_probabilities), 4, 6))
 
 
 class LiveShellConfigTests(unittest.TestCase):

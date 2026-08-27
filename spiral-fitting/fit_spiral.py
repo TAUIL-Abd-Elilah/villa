@@ -1267,6 +1267,7 @@ class FitContext:
             for entry, payload, error, reason in chunk_results:
                 if payload is not None:
                     patch = patch_from_payload(payload)
+                    patch._input_id = entry
                     patch._source_path = os.path.abspath(
                         os.path.join(path, entry))
                     results_by_entry[entry] = (patch, None, None)
@@ -1378,7 +1379,57 @@ class FitContext:
             for patch in patches
         ], dtype=np.float32)
         weights = areas ** self.config['patch_sampling_area_exponent']
-        return weights / weights.sum()
+        probabilities = weights / weights.sum()
+
+        # A prolific producer can contribute many individually small patches
+        # and thereby dominate the draw distribution even though each patch is
+        # area-weighted. Let a run cap that family's *aggregate* probability
+        # without throwing its evidence away. The default is an exact no-op.
+        cap_regex = self.config.get('patch_uuid_sampling_cap_regex')
+        cap_fraction = float(self.config.get(
+            'patch_uuid_sampling_cap_fraction', 1.0))
+        if cap_regex is None or cap_fraction >= 1.0:
+            return probabilities
+        if not 0.0 <= cap_fraction <= 1.0:
+            raise ValueError(
+                'patch_uuid_sampling_cap_fraction must be between 0 and 1')
+
+        pattern = re.compile(cap_regex)
+        capped = np.asarray([
+            bool(pattern.search(str(
+                getattr(patch, '_input_id', None)
+                or getattr(patch, 'uuid', None)
+                or os.path.basename(os.path.normpath(
+                    getattr(patch, '_source_path', '')))
+            )))
+            for patch in patches
+        ], dtype=bool)
+        if not capped.any():
+            print(
+                f'WARNING: patch sampling cap {cap_regex!r} matched no '
+                f'patches in this pool; leaving its distribution unchanged')
+            return probabilities
+        if capped.all():
+            print(
+                f'WARNING: patch sampling cap {cap_regex!r} matched all '
+                f'{len(patches):,} patches; no complementary pool exists, so '
+                'the cap cannot be applied')
+            return probabilities
+
+        natural_fraction = float(probabilities[capped].sum())
+        if natural_fraction <= cap_fraction:
+            return probabilities
+        probabilities[capped] *= cap_fraction / natural_fraction
+        probabilities[~capped] *= (
+            (1.0 - cap_fraction) / (1.0 - natural_fraction))
+        # Remove float32 accumulation drift before np.random.choice validates p.
+        probabilities /= probabilities.sum()
+        print(
+            f'patch sampling cap {cap_regex!r} matched {int(capped.sum()):,}/'
+            f'{len(patches):,} patches: aggregate probability '
+            f'{natural_fraction:.3f} -> '
+            f'{float(probabilities[capped].sum()):.3f}')
+        return probabilities
 
     def _rebuild_pcl_sampling_strata(self):
         """Rebuild the per-family sampling strata in place.
@@ -3663,6 +3714,7 @@ class FitContext:
                     if input_id in self.verified_patches or input_id in new_patches:
                         raise RuntimeError(f'Patch {input_id!r} is already part of this session')
                     patch = load_tifxyz(path)
+                    patch._input_id = input_id
                     patch._source_path = os.path.abspath(path)
                     cells_to_erode = patch.erosion_cells(self.config['patch_erode_patches'])
                     if cells_to_erode > 0 and not erode_patch_valid_region(patch, cells_to_erode):
@@ -3955,7 +4007,11 @@ class FitContext:
                         self._prepare_patch_sampling_cache(
                             self.unverified_patches_list)
                     self.unverified_patch_atlas.rebuild_sampling_atlas()
-            elif 'patch_sampling_area_exponent' in changed:
+            elif changed & {
+                    'patch_sampling_area_exponent',
+                    'patch_uuid_sampling_cap_regex',
+                    'patch_uuid_sampling_cap_fraction',
+            }:
                 self.patch_sampling_probabilities = self._patch_sampling_probabilities(
                     self.verified_patches_list)
                 if self.unverified_patches_list:

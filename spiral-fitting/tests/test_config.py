@@ -3,7 +3,8 @@ import json
 
 import pytest
 
-from config import Config, FitConfig, MODEL_STAGE_KEYS, rebuild_stage
+from config import (BACKFILLABLE_CONFIG_DEFAULTS, Config, FitConfig,
+                    MODEL_STAGE_KEYS, rebuild_stage)
 from fit_session import run_mutable_config
 
 
@@ -182,6 +183,23 @@ def test_mapping_and_json_overrides_and_validation(tmp_path):
         Config({"dense_spacing_pair_m_short": [1]})
     with pytest.raises(ValueError):
         Config({"track_max_tortuosity": "unlimited"})
+    with pytest.raises(ValueError, match="Out-of-range"):
+        Config({"patch_uuid_sampling_cap_fraction": 1.01})
+    with pytest.raises(ValueError, match="Out-of-range"):
+        Config({"patch_uuid_sampling_cap_fraction": -0.01})
+
+
+def test_patch_sampling_cap_is_checkpoint_backfillable_and_run_mutable():
+    defaults = Config().as_dict()
+    assert defaults["patch_uuid_sampling_cap_regex"] is None
+    assert defaults["patch_uuid_sampling_cap_fraction"] == 1.0
+    assert BACKFILLABLE_CONFIG_DEFAULTS["patch_uuid_sampling_cap_regex"] is None
+    assert BACKFILLABLE_CONFIG_DEFAULTS["patch_uuid_sampling_cap_fraction"] == 1.0
+    fields = Config.catalog()["schema"]["fields"]
+    assert fields["patch_uuid_sampling_cap_regex"]["runtime_impact"] == \
+        "run_boundary"
+    assert fields["patch_uuid_sampling_cap_fraction"]["runtime_impact"] == \
+        "run_boundary"
 
 
 def test_obsolete_patch_sampling_fields_are_not_in_the_schema():

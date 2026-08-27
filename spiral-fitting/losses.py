@@ -413,7 +413,11 @@ def _sample_patch_batch(key, patches, sampling_probabilities, num_to_sample,
     if prefetch.prefetch_enabled() and torch.cuda.is_available():
         pf = prefetch.get_prefetcher()
         rng = pf.np_rng(key)
-        return pf.pop_or_run((key, id(crossing_map), num_to_sample,
+        # Sampling weights are replaced when a run-boundary sampler setting
+        # changes or interactive inputs are added. Include their identity so
+        # the first batch after that change cannot consume an old prefetch.
+        return pf.pop_or_run((key, id(crossing_map),
+                              id(sampling_probabilities), num_to_sample,
                               point_cap),
                              lambda: build(rng))
     return build(prefetch.LegacyNumpyRandom)
