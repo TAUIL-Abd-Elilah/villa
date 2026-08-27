@@ -78,6 +78,13 @@ This also builds Spiral's native helpers as `vc_spiral.spiral_sampling`,
 `vc_spiral.surface_index`. OpenMP is used when the toolchain provides it; the
 same modules build with serial kernels when it does not.
 
+With Microsoft Visual C++, the native helpers build with serial kernels
+because its legacy OpenMP mode does not support every directive they use. On
+all Windows toolchains, `vc_spiral.track_store` is not built because its
+packed-track accelerator uses POSIX memory mapping. The Python loader detects
+that absence and falls back to the regular DBM track loader; the other native
+helpers still build normally.
+
 or with conda/pip, install `torch` for your CUDA version and then
 `pip install -e .` from `spiral-fitting/`.
 

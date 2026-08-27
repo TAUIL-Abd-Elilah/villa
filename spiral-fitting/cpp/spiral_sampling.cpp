@@ -6,6 +6,7 @@
 #include <limits>
 #include <new>
 #include <cstring>
+#include <numbers>
 #include <numeric>
 #include <optional>
 #include <random>
@@ -1024,8 +1025,8 @@ private:
                             row * patch.quad_columns + begin + static_cast<int64_t>(position) - 1)];
                         const float difference = theta(static_cast<size_t>(packed))
                             - theta(static_cast<size_t>(previous));
-                        const float step = (difference > static_cast<float>(M_PI) ? dr : 0.0F)
-                            - (difference < -static_cast<float>(M_PI) ? dr : 0.0F);
+                        const float step = (difference > std::numbers::pi_v<float> ? dr : 0.0F)
+                            - (difference < -std::numbers::pi_v<float> ? dr : 0.0F);
                         subrow.cumulative[position] = subrow.cumulative[position - 1] + step;
                     }
                     subrow.unwrapped[position] = shifted(static_cast<size_t>(packed))
@@ -1238,8 +1239,8 @@ nb::dict unwrap_block_samples(
                     if (next < 0 || component[static_cast<size_t>(next)] >= 0)
                         continue;
                     const float difference = theta(static_cast<size_t>(next)) - theta(current);
-                    const int step = static_cast<int>(difference > static_cast<float>(M_PI))
-                        - static_cast<int>(difference < -static_cast<float>(M_PI));
+                    const int step = static_cast<int>(difference > std::numbers::pi_v<float>)
+                        - static_cast<int>(difference < -std::numbers::pi_v<float>);
                     adjustments[static_cast<size_t>(next)] = adjustments[current] + step;
                     component[static_cast<size_t>(next)] = components;
                     stack.push_back(static_cast<size_t>(next));

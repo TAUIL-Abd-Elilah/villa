@@ -14,7 +14,12 @@ if(VC_SPIRAL_NANOBIND_CMAKE_DIR)
 endif()
 
 find_package(nanobind CONFIG REQUIRED)
-find_package(OpenMP QUIET COMPONENTS CXX)
+# MSVC's legacy OpenMP mode accepts enough directives for CMake to find it,
+# but rejects the atomics and min/max reductions used by track_crossings.
+# Leave _OPENMP undefined there so every native helper takes its serial path.
+if(NOT MSVC)
+    find_package(OpenMP QUIET COMPONENTS CXX)
+endif()
 
 function(vc_spiral_module target source output_name)
     nanobind_add_module(${target} NOMINSIZE ${source})
@@ -23,7 +28,7 @@ function(vc_spiral_module target source output_name)
         LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/vc_spiral"
     )
     target_compile_features(${target} PRIVATE cxx_std_23)
-    if(OpenMP_CXX_FOUND)
+    if(OpenMP_CXX_FOUND AND NOT MSVC)
         target_link_libraries(${target} PRIVATE OpenMP::OpenMP_CXX)
     endif()
     install(TARGETS ${target}
@@ -34,7 +39,11 @@ endfunction()
 
 vc_spiral_module(vc_spiral_sampling spiral_sampling.cpp spiral_sampling)
 vc_spiral_module(vc_spiral_track_crossings track_crossings.cpp track_crossings)
-vc_spiral_module(vc_spiral_track_store track_store.cpp track_store)
+# track_store uses POSIX mmap APIs.  Its Python caller already falls back to
+# the DBM loader when this optional accelerator is unavailable.
+if(NOT WIN32)
+    vc_spiral_module(vc_spiral_track_store track_store.cpp track_store)
+endif()
 vc_spiral_module(vc_spiral_surface_index surface_index.cpp surface_index)
 
 target_compile_options(vc_spiral_track_crossings PRIVATE

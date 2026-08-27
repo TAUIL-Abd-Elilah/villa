@@ -48,6 +48,11 @@ using FloatCoordinates = nb::ndarray<nb::numpy, const float,
 using Int32Matrix = nb::ndarray<nb::numpy, const int32_t,
                                 nb::ndim<2>, nb::c_contig>;
 
+// std::vector<T> only promises storage aligned for T. Refuse platforms where
+// atomic_ref would require a stricter alignment and therefore be undefined.
+static_assert(std::atomic_ref<uint32_t>::required_alignment <= alignof(uint32_t));
+static_assert(std::atomic_ref<int64_t>::required_alignment <= alignof(int64_t));
+
 struct Event {
     int32_t first;
     int32_t second;
@@ -1017,10 +1022,12 @@ nb::dict resample_tracks(
                     continue;
                 if (static_cast<size_t>(partner) >= track_count)
                     continue;
-#pragma omp atomic update
-                anchor_counts[static_cast<size_t>(track)]++;
-#pragma omp atomic update
-                anchor_counts[static_cast<size_t>(partner)]++;
+                std::atomic_ref<uint32_t>(
+                    anchor_counts[static_cast<size_t>(track)]).fetch_add(
+                        1, std::memory_order_relaxed);
+                std::atomic_ref<uint32_t>(
+                    anchor_counts[static_cast<size_t>(partner)]).fetch_add(
+                        1, std::memory_order_relaxed);
             }
         }
     }
@@ -1077,10 +1084,12 @@ nb::dict resample_tracks(
                     continue;
                 int64_t self_destination;
                 int64_t partner_destination;
-#pragma omp atomic capture
-                self_destination = anchor_cursor[static_cast<size_t>(track)]++;
-#pragma omp atomic capture
-                partner_destination = anchor_cursor[static_cast<size_t>(partner)]++;
+                self_destination = std::atomic_ref<int64_t>(
+                    anchor_cursor[static_cast<size_t>(track)]).fetch_add(
+                        1, std::memory_order_relaxed);
+                partner_destination = std::atomic_ref<int64_t>(
+                    anchor_cursor[static_cast<size_t>(partner)]).fetch_add(
+                        1, std::memory_order_relaxed);
                 anchors[static_cast<size_t>(self_destination)]
                     = self_local_data[table_index];
                 anchors[static_cast<size_t>(partner_destination)]

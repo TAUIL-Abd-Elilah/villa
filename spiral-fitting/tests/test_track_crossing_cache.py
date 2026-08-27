@@ -3,6 +3,7 @@ import pickle
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 import numpy as np
 import torch
@@ -12,6 +13,7 @@ from tracks import (
     PackedTrackCollection,
     _build_crossing_partner_csr,
     _load_native_track_crossings,
+    _load_native_track_store,
     _materialize_cached_crossing_partner_table,
     _materialize_crossing_partner_table,
     _pack_track_points,
@@ -95,6 +97,9 @@ class TrackCrossingCacheTests(unittest.TestCase):
                 sample['sampled_scroll'][sample['primary_cross_flat'][0]].numpy(),
                 sample['sampled_scroll'][sample['partner_cross_flat'][0]].numpy())
 
+    @unittest.skipUnless(
+        _load_native_track_store() is not None,
+        'vc_spiral.track_store is not built')
     def test_packed_store_loads_and_prepares_without_track_objects(self):
         with tempfile.TemporaryDirectory() as temporary:
             path = self.make_db(temporary)
@@ -130,6 +135,20 @@ class TrackCrossingCacheTests(unittest.TestCase):
             self.assertIn('crossing_index', prepared)
             self.assertEqual(
                 int(prepared['crossing_index_stats']['directed_crossings']), 2)
+
+    def test_packed_store_falls_back_when_native_loader_is_unavailable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = self.make_db(temporary)
+            write_packed_track_store(path, show_progress=False)
+            with mock.patch('tracks._load_native_track_store', return_value=None):
+                tracks, families, source_ids = load_tracks_from_dbm(
+                    path, 0, 20, return_families=True,
+                    return_source_ids=True, show_progress=False)
+
+            self.assertIsInstance(tracks, list)
+            self.assertEqual(len(tracks), 2)
+            self.assertEqual(families, ['horizontal', 'vertical'])
+            np.testing.assert_array_equal(source_ids, [0, 1 << 32])
 
     def test_builder_limits_cache_to_half_open_z_range(self):
         with tempfile.TemporaryDirectory() as temporary:

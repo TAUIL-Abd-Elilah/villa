@@ -8,7 +8,10 @@ import os
 import numpy as np
 from scipy.sparse import csr_array
 from scipy.sparse.csgraph import breadth_first_order, connected_components, maximum_flow
-import vc_spiral.track_store as track_store
+try:
+    import vc_spiral.track_store as track_store
+except ImportError:  # Optional POSIX mmap accelerator is not built on Windows.
+    track_store = None
 import vc_delta3d  # Registers VC-Delta3D with numcodecs.
 import zarr
 import fsspec
@@ -499,6 +502,10 @@ def maybe_fetch_tracks(tracks_path= Path("/home/sean/Desktop/spiral_dataset/to_h
     print("Hugging Face sync:", _plan.summary())
     
 def load_tracks(local_tracks_path):
+    if track_store is None:
+        raise RuntimeError(
+            'track_graph_testing requires vc_spiral.track_store to inspect '
+            'packed tracks; it is unavailable on this platform')
     info = track_store.inspect(str(local_tracks_path))
     
     crossing_cache_path = local_tracks_path.with_suffix(".crossings.npz")
