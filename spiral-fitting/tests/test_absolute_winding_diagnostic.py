@@ -2,6 +2,7 @@ import math
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 import torch
 
 from satisfaction_metrics import (
@@ -39,10 +40,11 @@ def _one_quad_patch(theta, winding, *, radial_noise=0.0):
     )
 
 
-def _evaluation(patches):
+def _evaluation(patches, device='cpu'):
+    device = torch.device(device)
     return evaluate_patch_satisfaction_packed(
-        _IdentityTransform(), torch.tensor(10.0), patches,
-        _ListPatchAtlas(patches, torch.device('cpu')),
+        _IdentityTransform(), torch.tensor(10.0, device=device), patches,
+        _ListPatchAtlas(patches, device),
         -1, 1, include_splicing=False)
 
 
@@ -155,3 +157,27 @@ def test_theta_seam_reference_step_does_not_create_false_disagreement():
     assert comparison['annotation_derived_expected_winding_at_cell'] == 41
     assert comparison['native_self_derived_winding'] == 41
     assert comparison['difference_windings'] == 0
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason='CUDA is unavailable')
+def test_direct_anchor_diagnostic_indexes_cpu_profiles_from_cuda_evaluation():
+    patches = [_one_quad_patch(0.2, 41)]
+    evaluation = _evaluation(patches, device='cuda')
+
+    # Packed geometry stays on the model device, while profile results are
+    # deliberately returned on CPU for reporting.  Gather indices must follow
+    # each source tensor rather than the geometry device globally.
+    assert evaluation.target_winding_indices.is_cuda
+    assert evaluation.center_theta.is_cuda
+    assert evaluation.profiles['strict'].packed_satisfied_quads.device.type == 'cpu'
+    assert evaluation.profiles['strict'].satisfied_patches.device.type == 'cpu'
+
+    report = report_absolute_winding_diagnostic(
+        _IdentityTransform(), ['shifted'], evaluation,
+        [_absolute_anchor('shifted', 40)],
+    )
+
+    comparison = report['comparisons'][0]
+    assert comparison['difference_windings'] == 1
+    assert comparison['native_anchor_quad_strict_satisfied'] is True
+    assert comparison['native_patch_strict_satisfied'] is True

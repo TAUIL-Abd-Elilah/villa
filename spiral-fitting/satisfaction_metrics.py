@@ -217,12 +217,16 @@ def report_absolute_winding_diagnostic(
     # packed quads than annotations, so materialising dense target/satisfaction
     # grids just for this diagnostic would make the report itself expensive.
     if candidates:
+        packed_positions = [entry['packed_index'] for entry in candidates]
         packed_indices = torch.as_tensor(
-            [entry['packed_index'] for entry in candidates], dtype=torch.int64,
+            packed_positions, dtype=torch.int64,
             device=evaluation.target_winding_indices.device)
         native_targets = evaluation.target_winding_indices.index_select(
             0, packed_indices).cpu().tolist()
-        cell_thetas = evaluation.center_theta.index_select(0, packed_indices)
+        theta_indices = torch.as_tensor(
+            packed_positions, dtype=torch.int64,
+            device=evaluation.center_theta.device)
+        cell_thetas = evaluation.center_theta.index_select(0, theta_indices)
         anchor_zyxs = torch.as_tensor(
             np.stack([entry['anchor_zyx'] for entry in candidates]),
             dtype=torch.float32, device=cell_thetas.device)
@@ -234,11 +238,16 @@ def report_absolute_winding_diagnostic(
             (reference_delta > np.pi).to(torch.int32)
             - (reference_delta < -np.pi).to(torch.int32)
         ).cpu().tolist()
-        native_quad_satisfied = evaluation.profiles['strict'].packed_satisfied_quads.index_select(
-            0, packed_indices).cpu().tolist()
+        strict_profile = evaluation.profiles['strict']
+        quad_indices = torch.as_tensor(
+            packed_positions, dtype=torch.int64,
+            device=strict_profile.packed_satisfied_quads.device)
+        native_quad_satisfied = strict_profile.packed_satisfied_quads.index_select(
+            0, quad_indices).cpu().tolist()
         patch_indices = torch.as_tensor(
-            [entry['patch_index'] for entry in candidates], dtype=torch.int64)
-        native_patch_satisfied = evaluation.profiles['strict'].satisfied_patches.index_select(
+            [entry['patch_index'] for entry in candidates], dtype=torch.int64,
+            device=strict_profile.satisfied_patches.device)
+        native_patch_satisfied = strict_profile.satisfied_patches.index_select(
             0, patch_indices).tolist()
     else:
         native_targets = []
