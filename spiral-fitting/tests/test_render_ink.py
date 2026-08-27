@@ -14,6 +14,19 @@ import render_ink
 
 
 class RenderInkPathTests(unittest.TestCase):
+    def test_local_render_command_is_unchanged_by_default(self):
+        command = render_ink.build_vc_render_command(
+            'vc_render_tifxyz', '/seg/w001', '/out',
+            volume='/data/ink.zarr', scale=0.25, group_idx=1, num_slices=5,
+        )
+
+        self.assertEqual(command, [
+            'vc_render_tifxyz', '--segmentation', '/seg/w001',
+            '--scale', '0.25', '--group-idx', '1',
+            '--volume', '/data/ink.zarr', '--tif-output', '/out',
+            '--num-slices', '5',
+        ])
+
     def test_remote_render_options_are_forwarded_verbatim(self):
         command = render_ink.build_vc_render_command(
             'vc_render_tifxyz', '/seg/w059', '/out',
@@ -36,7 +49,7 @@ class RenderInkPathTests(unittest.TestCase):
         ])
 
     def test_partial_crop_is_rejected(self):
-        with self.assertRaisesRegex(Exception, 'must be given together'):
+        with self.assertRaisesRegex(render_ink.click.UsageError, 'must be given together'):
             render_ink.build_vc_render_command(
                 'vc_render_tifxyz', '/seg/w059', '/out',
                 volume='/tmp/unused', scale=1.0, group_idx=2, num_slices=5,

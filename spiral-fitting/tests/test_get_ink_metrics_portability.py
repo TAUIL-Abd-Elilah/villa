@@ -32,6 +32,16 @@ class InkMetricPortabilityTests(unittest.TestCase):
         self.assertEqual(method, 'fork')
         setter.assert_called_once_with('fork', force=True)
 
+    def test_locked_embedded_context_does_not_mask_inference(self):
+        with mock.patch.object(
+                get_ink_metrics.multiprocessing, 'get_all_start_methods',
+                return_value=['spawn']), mock.patch.object(
+                get_ink_metrics.multiprocessing, 'set_start_method',
+                side_effect=ValueError('locked')):
+            method = get_ink_metrics.configure_worker_start_method()
+
+        self.assertEqual(method, 'spawn')
+
     def test_public_trainer_bypasses_recursive_optional_module_scan(self):
         recursive = mock.Mock(side_effect=AssertionError('tree scan should not run'))
         finder = SimpleNamespace(recursive_find_python_class=recursive)
