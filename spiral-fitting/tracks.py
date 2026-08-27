@@ -2119,37 +2119,21 @@ def get_track_satisfied_counts(slice_to_spiral_transform, dr_per_winding, tracks
     )
 
 
-def get_track_satisfied_counts_in_chunks(
-        slice_to_spiral_transform, dr_per_winding, tracks, metrics_config,
-        chunk_size=500_000, return_mode_windings=False):
-    """Return track satisfaction counts and, optionally, native target windings.
-
-    ``mode_winding_per_track`` is the self-derived integer target used by the
-    satisfaction calculation.  It is useful report-only context for callers that
-    hold an independent absolute anchor.  The default remains the historical
-    two-tuple so existing training/output callers are unchanged.
-    """
+def get_track_satisfied_counts_in_chunks(slice_to_spiral_transform, dr_per_winding, tracks, metrics_config, chunk_size=500_000):
     sat_parts, tot_parts = [], []
-    mode_parts = []
     for start in range(0, len(tracks), chunk_size):
         chunk = tracks[start:start + chunk_size]
-        _, sat, tot, _, mode = get_track_satisfied_counts(
+        _, sat, tot, _, _ = get_track_satisfied_counts(
             slice_to_spiral_transform, dr_per_winding, chunk, metrics_config,
         )
         sat_parts.append(sat)
         tot_parts.append(tot)
-        if return_mode_windings:
-            mode_parts.append(mode)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     if not sat_parts:
         empty = torch.zeros(0, dtype=torch.int64)
-        return (empty, empty, empty) if return_mode_windings else (empty, empty)
-    satisfied = torch.cat(sat_parts)
-    totals = torch.cat(tot_parts)
-    if return_mode_windings:
-        return satisfied, totals, torch.cat(mode_parts)
-    return satisfied, totals
+        return empty, empty
+    return torch.cat(sat_parts), torch.cat(tot_parts)
 
 
 def _build_anchor_kdtree(anchor_zyx):

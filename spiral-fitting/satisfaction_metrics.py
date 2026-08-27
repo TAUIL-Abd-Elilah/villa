@@ -7,6 +7,7 @@ import numpy as np
 import torch
 
 from sample_spiral import (
+    get_theta,
     get_theta_and_radii,
     get_theta_crossing_step_adjustments,
     radius_from_unwrapped_shifted,
@@ -100,15 +101,16 @@ class PatchSatisfactionEvaluation:
         return outputs
 
 
-def report_absolute_winding_diagnostic(patch_ids, evaluation, cross_patch_pcls):
+def report_absolute_winding_diagnostic(
+        slice_to_spiral_transform, patch_ids, evaluation, cross_patch_pcls):
     """Compare native patch targets with attached absolute-winding annotations.
 
     Patch satisfaction deliberately derives its target from the evaluated patch.
     That makes it useful for geometric residuals, but means it cannot by itself
     distinguish a patch on the intended winding from the same patch translated by
-    a whole winding.  Absolute-winding point collections are independent evidence
-    already consumed by ``get_patch_abs_winding_loss``.  This helper keeps the two
-    signals separate and reports their disagreement; it never changes a
+    a whole winding.  Absolute-winding point collections provide an external target
+    that can also be consumed by ``get_patch_abs_winding_loss``.  This helper
+    keeps the two signals separate and reports their disagreement; it never changes a
     satisfaction count, a mesh selection, or a loss.
 
     Only direct absolute anchors are used here.  Relative/fiber collections are
@@ -131,6 +133,7 @@ def report_absolute_winding_diagnostic(patch_ids, evaluation, cross_patch_pcls):
         'unknown_patch': 0,
         'nonfinite_annotation': 0,
         'nonintegral_annotation': 0,
+        'missing_anchor_position': 0,
         'outside_target_grid': 0,
         'missing_native_target': 0,
     }
@@ -168,6 +171,14 @@ def report_absolute_winding_diagnostic(patch_ids, evaluation, cross_patch_pcls):
                     skipped['nonintegral_annotation'] += 1
                     continue
                 try:
+                    anchor_zyx = np.asarray(point['zyx'], dtype=np.float32)
+                except (KeyError, TypeError, ValueError):
+                    skipped['missing_anchor_position'] += 1
+                    continue
+                if anchor_zyx.shape != (3,) or not np.isfinite(anchor_zyx).all():
+                    skipped['missing_anchor_position'] += 1
+                    continue
+                try:
                     ij = on_patch['ij']
                     i_q, j_q = int(ij[0]), int(ij[1])
                 except (KeyError, TypeError, ValueError, IndexError):
@@ -194,7 +205,8 @@ def report_absolute_winding_diagnostic(patch_ids, evaluation, cross_patch_pcls):
                     'patch_index': patch_index,
                     'quad_ij': [i_q, j_q],
                     'packed_index': begin + int(match[0]),
-                    'expected_winding': expected_winding,
+                    'annotation_winding_at_anchor': expected_winding,
+                    'anchor_zyx': anchor_zyx,
                     'pcl_id': pcl.get('id', pcl_position),
                     'pcl_name': pcl.get('name'),
                     'source_file': pcl.get('source_file'),
@@ -210,25 +222,53 @@ def report_absolute_winding_diagnostic(patch_ids, evaluation, cross_patch_pcls):
             device=evaluation.target_winding_indices.device)
         native_targets = evaluation.target_winding_indices.index_select(
             0, packed_indices).cpu().tolist()
-        native_satisfied = evaluation.profiles['strict'].packed_satisfied_quads.index_select(
+        cell_thetas = evaluation.center_theta.index_select(0, packed_indices)
+        anchor_zyxs = torch.as_tensor(
+            np.stack([entry['anchor_zyx'] for entry in candidates]),
+            dtype=torch.float32, device=cell_thetas.device)
+        with torch.no_grad():
+            anchor_spiral = slice_to_spiral_transform(anchor_zyxs)
+            anchor_thetas, _ = get_theta(anchor_spiral[..., 1:])
+        reference_delta = cell_thetas - anchor_thetas
+        reference_steps = (
+            (reference_delta > np.pi).to(torch.int32)
+            - (reference_delta < -np.pi).to(torch.int32)
+        ).cpu().tolist()
+        native_quad_satisfied = evaluation.profiles['strict'].packed_satisfied_quads.index_select(
             0, packed_indices).cpu().tolist()
+        patch_indices = torch.as_tensor(
+            [entry['patch_index'] for entry in candidates], dtype=torch.int64)
+        native_patch_satisfied = evaluation.profiles['strict'].satisfied_patches.index_select(
+            0, patch_indices).tolist()
     else:
         native_targets = []
-        native_satisfied = []
+        reference_steps = []
+        native_quad_satisfied = []
+        native_patch_satisfied = []
 
     comparisons = []
-    for entry, native_winding, satisfied in zip(candidates, native_targets, native_satisfied):
+    for entry, native_winding, reference_step, quad_satisfied, patch_satisfied in zip(
+            candidates, native_targets, reference_steps,
+            native_quad_satisfied, native_patch_satisfied):
         native_winding = int(native_winding)
         if native_winding < 0:
             skipped['missing_native_target'] += 1
             continue
-        expected = entry.pop('expected_winding')
+        annotation_winding = entry.pop('annotation_winding_at_anchor')
+        entry.pop('anchor_zyx')
+        # Match ThetaCrossingMap.adjustments_from_potentials for an annotation
+        # reference node and its attached patch cell.  A direct comparison to
+        # wind_a would create a false +/-1 warning across theta=0.
+        expected_at_cell = annotation_winding - int(reference_step)
         comparisons.append({
             **entry,
-            'annotation_derived_expected_winding': expected,
+            'annotation_winding_at_anchor': annotation_winding,
+            'anchor_to_cell_theta_reference_step': int(reference_step),
+            'annotation_derived_expected_winding_at_cell': expected_at_cell,
             'native_self_derived_winding': native_winding,
-            'difference_windings': native_winding - expected,
-            'native_strict_satisfied': bool(satisfied),
+            'difference_windings': native_winding - expected_at_cell,
+            'native_anchor_quad_strict_satisfied': bool(quad_satisfied),
+            'native_patch_strict_satisfied': bool(patch_satisfied),
         })
 
     comparisons.sort(key=lambda entry: (
@@ -245,44 +285,11 @@ def report_absolute_winding_diagnostic(patch_ids, evaluation, cross_patch_pcls):
             'anchors_compared': len(comparisons),
             'anchors_agreeing': len(comparisons) - len(disagreements),
             'anchors_disagreeing': len(disagreements),
-            'disagreeing_and_native_strict_satisfied': sum(
-                entry['native_strict_satisfied'] for entry in disagreements),
+            'disagreeing_and_native_patch_strict_satisfied': sum(
+                entry['native_patch_strict_satisfied'] for entry in disagreements),
             'skipped': skipped,
         },
         'comparisons': comparisons,
-    }
-
-
-def report_track_self_derived_windings(mode_windings):
-    """Compactly report the native target winding used by each evaluated track.
-
-    Track-store rows contain coordinates but no reference to an absolute-winding
-    point collection, so this deliberately does *not* infer an expected winding
-    from spatial proximity.  The report says that a comparison is unavailable
-    instead of manufacturing a potentially false anchor, while preserving the
-    self-derived values needed by a caller that does have that association.
-    """
-    mode_windings = torch.as_tensor(mode_windings, dtype=torch.int64).cpu()
-    if not mode_windings.numel():
-        return {
-            'comparison_available': False,
-            'reason': 'No valid tracks were evaluated.',
-            'tracks_evaluated': 0,
-            'self_derived_mode_winding_histogram': [],
-        }
-    values, counts = torch.unique(mode_windings, sorted=True, return_counts=True)
-    return {
-        'comparison_available': False,
-        'reason': (
-            'Track inputs provide geometry only; no track-to-absolute-winding '
-            'annotation association is available in this reporting path.'),
-        'tracks_evaluated': int(mode_windings.numel()),
-        'self_derived_mode_winding_min': int(values[0]),
-        'self_derived_mode_winding_max': int(values[-1]),
-        'self_derived_mode_winding_histogram': [
-            {'winding': int(winding), 'tracks': int(count)}
-            for winding, count in zip(values.tolist(), counts.tolist())
-        ],
     }
 
 
@@ -1064,19 +1071,15 @@ def save_overlay_and_print_satisfaction(
         'satisfied_area_fraction': satisfied_area_ratio,
     }
     absolute_winding_diagnostic = report_absolute_winding_diagnostic(
-        patches_dict.keys(), patch_evaluation, cross_patch_pcls)
+        slice_to_spiral_transform, patches_dict.keys(),
+        patch_evaluation, cross_patch_pcls)
     absolute_summary = absolute_winding_diagnostic['summary']
     print(
         'absolute_winding_diagnostic = '
         f"{absolute_summary['anchors_disagreeing']}/"
         f"{absolute_summary['anchors_compared']} direct anchors disagree "
-        f"({absolute_summary['disagreeing_and_native_strict_satisfied']} also native-strict-satisfied)")
-    absolute_winding_diagnostic['tracks'] = {
-        'comparison_available': False,
-        'reason': 'Track satisfaction was not evaluated for this run.',
-        'tracks_evaluated': 0,
-        'self_derived_mode_winding_histogram': [],
-    }
+        f"({absolute_summary['disagreeing_and_native_patch_strict_satisfied']} "
+        'also native-patch-strict-satisfied)')
     unattached_pcl_per_point_satisfied = []
     unattached_pcl_fully_satisfied = torch.zeros(len(unattached_pcl_strips), dtype=torch.bool)
     if unattached_pcl_strips:
@@ -1117,10 +1120,8 @@ def save_overlay_and_print_satisfaction(
                 progress.begin(
                     'finalizing', 'Evaluating tracks',
                     detail=f'{len(tracks):,} tracks')
-            track_satisfied_counts, track_total_counts, track_mode_windings = get_track_satisfied_counts_in_chunks(
-                slice_to_spiral_transform, dr_per_winding, tracks, metrics_config,
-                return_mode_windings=True,
-            )
+            track_satisfied_counts, track_total_counts = get_track_satisfied_counts_in_chunks(
+                slice_to_spiral_transform, dr_per_winding, tracks, metrics_config)
             track_fully_satisfied = (track_satisfied_counts == track_total_counts)
             fully_satisfied_tracks = int(track_fully_satisfied.sum().item())
             num_valid_tracks = int(track_total_counts.numel())
@@ -1138,8 +1139,6 @@ def save_overlay_and_print_satisfaction(
                 'total_track_points': track_total_points,
                 'satisfied_track_points_fraction': track_satisfied_point_ratio,
             })
-            absolute_winding_diagnostic['tracks'] = report_track_self_derived_windings(
-                track_mode_windings)
         except torch.OutOfMemoryError:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()

@@ -9,7 +9,6 @@ from satisfaction_metrics import (
     evaluate_patch_satisfaction_packed,
     report_absolute_winding_diagnostic,
 )
-from tracks import get_track_satisfied_counts_in_chunks
 
 
 class _IdentityTransform:
@@ -47,7 +46,7 @@ def _evaluation(patches):
         -1, 1, include_splicing=False)
 
 
-def _absolute_anchor(patch_id, winding, *, point_id=1):
+def _absolute_anchor(patch_id, winding, *, point_id=1, theta=0.2):
     return {
         'id': 10,
         'name': 'absolute-anchor',
@@ -57,6 +56,7 @@ def _absolute_anchor(patch_id, winding, *, point_id=1):
             patch_id: [{
                 'id': point_id,
                 'winding_annotation': float(winding),
+                'zyx': _spiral_point(theta, winding).numpy(),
                 'on_patch': {'id': patch_id, 'ij': [0.0, 0.0]},
             }],
         },
@@ -77,6 +77,7 @@ def test_whole_winding_shift_stays_native_satisfied_but_direct_anchor_flags_it()
     assert evaluation.profiles['strict'].satisfied_patches.tolist() == [True] * 4
 
     report = report_absolute_winding_diagnostic(
+        _IdentityTransform(),
         ['correct', 'shifted-one', 'shifted-two', 'shifted-twenty-three'], evaluation,
         [
             _absolute_anchor('correct', 40),
@@ -91,12 +92,12 @@ def test_whole_winding_shift_stays_native_satisfied_but_direct_anchor_flags_it()
     assert comparisons['shifted-one']['difference_windings'] == 1
     assert comparisons['shifted-two']['difference_windings'] == 2
     assert comparisons['shifted-twenty-three']['difference_windings'] == 23
-    assert all(entry['native_strict_satisfied'] for entry in comparisons.values())
+    assert all(entry['native_patch_strict_satisfied'] for entry in comparisons.values())
     assert report['summary']['anchors_disagreeing'] == 3
-    assert report['summary']['disagreeing_and_native_strict_satisfied'] == 3
+    assert report['summary']['disagreeing_and_native_patch_strict_satisfied'] == 3
 
 
-def test_direct_anchor_diagnostic_does_not_turn_small_radial_noise_into_a_switch():
+def test_direct_anchor_diagnostic_does_not_turn_uniform_radial_offset_into_a_switch():
     # Two voxels are inside both default native tolerances for dr=10.  The
     # expected absolute winding and native target still agree, so the diagnostic
     # reports no sheet switch rather than treating ordinary surface scatter as one.
@@ -105,8 +106,8 @@ def test_direct_anchor_diagnostic_does_not_turn_small_radial_noise_into_a_switch
     assert evaluation.profiles['strict'].satisfied_patches.tolist() == [True]
 
     report = report_absolute_winding_diagnostic(
-        ['noisy-but-correct'], evaluation,
-        [_absolute_anchor('noisy-but-correct', 40)],
+        _IdentityTransform(), ['offset-but-correct'], evaluation,
+        [_absolute_anchor('offset-but-correct', 40)],
     )
 
     assert report['summary']['anchors_compared'] == 1
@@ -123,7 +124,8 @@ def test_only_usable_absolute_anchors_are_compared():
     unknown_patch = _absolute_anchor('missing', 99, point_id=3)
 
     report = report_absolute_winding_diagnostic(
-        ['p'], evaluation, [nonabsolute, nonintegral, unknown_patch])
+        _IdentityTransform(), ['p'], evaluation,
+        [nonabsolute, nonintegral, unknown_patch])
 
     assert report['comparisons'] == []
     assert report['summary']['anchors_compared'] == 0
@@ -132,23 +134,24 @@ def test_only_usable_absolute_anchors_are_compared():
     assert report['summary']['skipped']['unknown_patch'] == 1
 
 
-def test_track_mode_windings_are_available_without_changing_default_result_shape():
-    tracks = [
-        np.stack([_spiral_point(theta, 40).numpy() for theta in (0.1, 0.2, 0.3)]),
-        np.stack([_spiral_point(theta, 41).numpy() for theta in (0.1, 0.2, 0.3)]),
-    ]
-    config = {
-        'satisfaction_radius_tolerance': 0.45,
-        'satisfaction_distance_tolerance': 6.0,
-    }
-    default_result = get_track_satisfied_counts_in_chunks(
-        _IdentityTransform(), torch.tensor(10.0), tracks, config)
-    satisfied, totals, modes = get_track_satisfied_counts_in_chunks(
-        _IdentityTransform(), torch.tensor(10.0), tracks, config,
-        chunk_size=1, return_mode_windings=True)
+def test_theta_seam_reference_step_does_not_create_false_disagreement():
+    anchor_theta = 2 * math.pi - 0.002
+    cell_theta = 0.002
+    patches = [_one_quad_patch(cell_theta, 41)]
+    evaluation = _evaluation(patches)
+    anchor = _absolute_anchor('seam', 40, theta=anchor_theta)
 
-    assert len(default_result) == 2
-    assert torch.equal(default_result[0], satisfied)
-    assert torch.equal(default_result[1], totals)
-    assert satisfied.tolist() == totals.tolist() == [3, 3]
-    assert modes.tolist() == [40, 41]
+    # The public loader's attachment tolerance is 2.5 voxels.  This synthetic
+    # real-shaped case lies within it while crossing theta=0.
+    distance = torch.linalg.norm(
+        torch.as_tensor(anchor['points_by_patch']['seam'][0]['zyx'])
+        - patches[0].zyxs[0, 0]).item()
+    assert distance < 2.5
+
+    report = report_absolute_winding_diagnostic(
+        _IdentityTransform(), ['seam'], evaluation, [anchor])
+    comparison = report['comparisons'][0]
+    assert comparison['anchor_to_cell_theta_reference_step'] == -1
+    assert comparison['annotation_derived_expected_winding_at_cell'] == 41
+    assert comparison['native_self_derived_winding'] == 41
+    assert comparison['difference_windings'] == 0
