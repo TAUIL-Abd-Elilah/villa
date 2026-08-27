@@ -325,6 +325,44 @@ def max_composite(tif_paths):
     return composite
 
 
+def build_vc_render_command(
+        vc_render_bin, concat_path, per_mesh_ink, *, volume, scale,
+        group_idx, num_slices, remote_url='', scale_segmentation=None,
+        slice_step=None, cache_gb=None, prefetch_remote=False,
+        crop_x=None, crop_y=None, crop_width=None, crop_height=None):
+    """Build one vc_render_tifxyz invocation, including remote-volume options."""
+    crop = (crop_x, crop_y, crop_width, crop_height)
+    if any(value is not None for value in crop) and not all(
+            value is not None for value in crop):
+        raise click.UsageError(
+            '--crop-x, --crop-y, --crop-width and --crop-height must be given together')
+    command = [
+        vc_render_bin,
+        '--segmentation', concat_path,
+        '--scale', str(scale),
+        '--group-idx', str(group_idx),
+        '--volume', volume,
+        '--tif-output', per_mesh_ink,
+        '--num-slices', str(num_slices),
+    ]
+    if remote_url:
+        command.extend(['--remote-url', remote_url])
+    if scale_segmentation is not None:
+        command.extend(['--scale-segmentation', str(scale_segmentation)])
+    if slice_step is not None:
+        command.extend(['--slice-step', str(slice_step)])
+    if cache_gb is not None:
+        command.extend(['--cache-gb', str(cache_gb)])
+    if prefetch_remote:
+        command.append('--prefetch-remote')
+    if crop_x is not None:
+        command.extend([
+            '--crop-x', str(crop_x), '--crop-y', str(crop_y),
+            '--crop-width', str(crop_width), '--crop-height', str(crop_height),
+        ])
+    return command
+
+
 @click.command(help=__doc__)
 @click.argument('meshes_dir', type=click.Path(exists=True, file_okay=False))
 @click.option('--volume', required=True, help='Ink volume zarr path')
@@ -332,6 +370,15 @@ def max_composite(tif_paths):
 @click.option('--scale', type=float, default=0.25, show_default=True)
 @click.option('--group-idx', type=int, default=1, show_default=True)
 @click.option('--num-slices', type=int, default=5, show_default=True)
+@click.option('--remote-url', default='', help='Remote Zarr root URL passed to vc_render_tifxyz')
+@click.option('--scale-segmentation', type=int, default=None, help='Segmentation-coordinate scale passed to vc_render_tifxyz')
+@click.option('--slice-step', type=int, default=None, help='Distance between rendered slices')
+@click.option('--cache-gb', type=float, default=None, help='Remote chunk-cache size in GiB')
+@click.option('--prefetch-remote/--no-prefetch-remote', default=False, show_default=True, help='Enable vc_render_tifxyz remote chunk prefetch')
+@click.option('--crop-x', type=int, default=None, help='Rendered-segmentation crop origin x (requires all crop options)')
+@click.option('--crop-y', type=int, default=None, help='Rendered-segmentation crop origin y (requires all crop options)')
+@click.option('--crop-width', type=int, default=None, help='Rendered crop width (requires all crop options)')
+@click.option('--crop-height', type=int, default=None, help='Rendered crop height (requires all crop options)')
 @click.option('--num-processes', '-j', type=int, default=1, show_default=True, help='Number of meshes to render (and flatten) concurrently')
 @click.option('--flatten/--no-flatten', default=True, show_default=True, help='SLIM-flatten each concatenated mesh before rendering')
 @click.option('--flatboi-bin', default='flatboi', show_default=True, help='Path to the flatboi binary')
@@ -356,7 +403,9 @@ def max_composite(tif_paths):
 @click.option('--lasagna-config', default='', help='Base lasagna flatten config json. Default: <lasagna-dir>/configs/flatten_fast_nofilter.json')
 @click.option('--lasagna-fit-script', default='', help='Lasagna fit entrypoint run for the full-scroll flatten. Default: _run_flatten_threaded.py if present, else fit.py')
 @click.option('--lasagna-device', default='cuda', show_default=True, help='--device passed to the lasagna flattener for the full-scroll flatten')
-def main(meshes_dir, volume, vc_render_bin, scale, group_idx, num_slices, num_processes,
+def main(meshes_dir, volume, vc_render_bin, scale, group_idx, num_slices,
+         remote_url, scale_segmentation, slice_step, cache_gb, prefetch_remote,
+         crop_x, crop_y, crop_width, crop_height, num_processes,
          flatten, flatboi_bin, tifxyz2obj_bin, obj2tifxyz_bin, uv_lift_bin, flatten_keep,
          flatten_iters, flatten_energy, flatten_tol, flatten_inpaint, pre_erode,
          keep_largest, flatboi_threads,
@@ -519,15 +568,16 @@ def main(meshes_dir, volume, vc_render_bin, scale, group_idx, num_slices, num_pr
     def render(name, concat_path):
         per_mesh_ink = os.path.join(concat_path, 'ink')
         os.makedirs(per_mesh_ink, exist_ok=True)
-        subprocess.run([
-            vc_render_bin,
-            '--segmentation', concat_path,
-            '--scale', str(scale),
-            '--group-idx', str(group_idx),
-            '--volume', volume,
-            '--tif-output', per_mesh_ink,
-            '--num-slices', str(num_slices),
-        ], check=True)
+        command = build_vc_render_command(
+            vc_render_bin, concat_path, per_mesh_ink,
+            volume=volume, scale=scale, group_idx=group_idx,
+            num_slices=num_slices, remote_url=remote_url,
+            scale_segmentation=scale_segmentation, slice_step=slice_step,
+            cache_gb=cache_gb, prefetch_remote=prefetch_remote,
+            crop_x=crop_x, crop_y=crop_y,
+            crop_width=crop_width, crop_height=crop_height,
+        )
+        subprocess.run(command, check=True)
         tif_paths = sorted(glob.glob(os.path.join(per_mesh_ink, '*.tif')))
         if not tif_paths:
             return None

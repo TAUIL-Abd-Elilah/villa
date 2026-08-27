@@ -14,6 +14,35 @@ import render_ink
 
 
 class RenderInkPathTests(unittest.TestCase):
+    def test_remote_render_options_are_forwarded_verbatim(self):
+        command = render_ink.build_vc_render_command(
+            'vc_render_tifxyz', '/seg/w059', '/out',
+            volume='/tmp/unused', scale=1.0, group_idx=2, num_slices=5,
+            remote_url='https://example.test/ink.zarr', scale_segmentation=4,
+            slice_step=1, cache_gb=4.0, prefetch_remote=True,
+            crop_x=1198, crop_y=302, crop_width=2048, crop_height=768,
+        )
+
+        self.assertEqual(command, [
+            'vc_render_tifxyz', '--segmentation', '/seg/w059',
+            '--scale', '1.0', '--group-idx', '2',
+            '--volume', '/tmp/unused', '--tif-output', '/out',
+            '--num-slices', '5',
+            '--remote-url', 'https://example.test/ink.zarr',
+            '--scale-segmentation', '4', '--slice-step', '1',
+            '--cache-gb', '4.0', '--prefetch-remote',
+            '--crop-x', '1198', '--crop-y', '302',
+            '--crop-width', '2048', '--crop-height', '768',
+        ])
+
+    def test_partial_crop_is_rejected(self):
+        with self.assertRaisesRegex(Exception, 'must be given together'):
+            render_ink.build_vc_render_command(
+                'vc_render_tifxyz', '/seg/w059', '/out',
+                volume='/tmp/unused', scale=1.0, group_idx=2, num_slices=5,
+                crop_x=1,
+            )
+
     def test_default_lasagna_dir_is_sibling_of_spiral_fitting(self):
         script = Path("/checkout/spiral-fitting/render_ink.py")
 
