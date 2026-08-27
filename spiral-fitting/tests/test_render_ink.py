@@ -27,12 +27,12 @@ class RenderInkPathTests(unittest.TestCase):
             '--num-slices', '5',
         ])
 
-    def test_remote_render_options_are_forwarded_verbatim(self):
+    def test_remote_render_options_match_vc_render_types(self):
         command = render_ink.build_vc_render_command(
             'vc_render_tifxyz', '/seg/w059', '/out',
             volume='/tmp/unused', scale=1.0, group_idx=2, num_slices=5,
-            remote_url='https://example.test/ink.zarr', scale_segmentation=4,
-            slice_step=1, cache_gb=4.0, prefetch_remote=True,
+            remote_url='https://example.test/ink.zarr', scale_segmentation=0.25,
+            slice_step=0.5, cache_gb=4, prefetch_remote=True,
             crop_x=1198, crop_y=302, crop_width=2048, crop_height=768,
         )
 
@@ -42,11 +42,25 @@ class RenderInkPathTests(unittest.TestCase):
             '--volume', '/tmp/unused', '--tif-output', '/out',
             '--num-slices', '5',
             '--remote-url', 'https://example.test/ink.zarr',
-            '--scale-segmentation', '4', '--slice-step', '1',
-            '--cache-gb', '4.0', '--prefetch-remote',
+            '--scale-segmentation', '0.25', '--slice-step', '0.5',
+            '--cache-gb', '4', '--prefetch-remote',
             '--crop-x', '1198', '--crop-y', '302',
             '--crop-width', '2048', '--crop-height', '768',
         ])
+
+    def test_remote_option_click_types_match_vc_render_types(self):
+        options = {parameter.name: parameter for parameter in render_ink.main.params}
+
+        self.assertEqual(options['scale_segmentation'].type.name, 'float')
+        self.assertEqual(options['slice_step'].type.name, 'float')
+        self.assertEqual(options['cache_gb'].type.name, 'integer range')
+        self.assertEqual(options['scale_segmentation'].type_cast_value(None, '0.25'), 0.25)
+        self.assertEqual(options['slice_step'].type_cast_value(None, '0.5'), 0.5)
+        self.assertEqual(options['cache_gb'].type_cast_value(None, '4'), 4)
+        with self.assertRaises(render_ink.click.BadParameter):
+            options['cache_gb'].type_cast_value(None, '4.5')
+        with self.assertRaises(render_ink.click.BadParameter):
+            options['cache_gb'].type_cast_value(None, '-1')
 
     def test_partial_crop_is_rejected(self):
         with self.assertRaisesRegex(render_ink.click.UsageError, 'must be given together'):
