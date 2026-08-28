@@ -2119,20 +2119,39 @@ def get_track_satisfied_counts(slice_to_spiral_transform, dr_per_winding, tracks
     )
 
 
-def get_track_satisfied_counts_in_chunks(slice_to_spiral_transform, dr_per_winding, tracks, metrics_config, chunk_size=500_000):
+def get_track_satisfied_counts_in_chunks(
+        slice_to_spiral_transform, dr_per_winding, tracks, metrics_config,
+        chunk_size=500_000, *, return_mode_windings=False):
+    """Evaluate tracks in bounded batches, optionally retaining winding modes.
+
+    The default two-tensor result is kept for existing callers.  The underlying
+    metric already derives one integer winding mode per valid track; callers
+    performing an absolute-winding diagnostic can opt in to that third tensor
+    instead of having the chunk boundary discard it.  All three tensors are in
+    the same input order with tracks shorter than two points omitted.
+    """
     sat_parts, tot_parts = [], []
+    mode_parts = [] if return_mode_windings else None
     for start in range(0, len(tracks), chunk_size):
         chunk = tracks[start:start + chunk_size]
-        _, sat, tot, _, _ = get_track_satisfied_counts(
+        _, sat, tot, _, mode = get_track_satisfied_counts(
             slice_to_spiral_transform, dr_per_winding, chunk, metrics_config,
         )
         sat_parts.append(sat)
         tot_parts.append(tot)
+        if mode_parts is not None:
+            mode_parts.append(mode)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
     if not sat_parts:
         empty = torch.zeros(0, dtype=torch.int64)
+        if return_mode_windings:
+            return empty, empty, empty
         return empty, empty
+    if return_mode_windings:
+        return (
+            torch.cat(sat_parts), torch.cat(tot_parts), torch.cat(mode_parts),
+        )
     return torch.cat(sat_parts), torch.cat(tot_parts)
 
 
