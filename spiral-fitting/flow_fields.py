@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 import flow_grad_smoothing
 import flow_triton
+from spline_basis import cubic_bspline_weights as _bspline_w4
 
 
 def sample_field(normalised_zyx, field_for_grid_sample):
@@ -82,21 +83,6 @@ def sample_field_bspline(field, normalised_zyx):
     weight = torch.where(corner_is_hi, g1[None], g0[None]).prod(-1)  # 8, n
     fetched = sample_field(pos, field)  # 8, n, 3
     return (fetched * weight.unsqueeze(-1)).sum(0).view(*orig_shape[:-1], 3)
-
-
-def _bspline_w4(f):
-    # Uniform cubic B-spline weights over taps lo-1 .. lo+2 for fractional
-    # offsets f, stacked on a new leading axis :: 4, *f.shape. Same basis as
-    # sample_field_bspline's w0..w3 (which keeps them unstacked to feed the
-    # two-fetch collapse).
-    f2 = f * f
-    f3 = f2 * f
-    return torch.stack([
-        (1. - f) ** 3 / 6.,
-        (3. * f3 - 6. * f2 + 4.) / 6.,
-        (-3. * f3 + 3. * f2 + 3. * f + 1.) / 6.,
-        f3 / 6.,
-    ])
 
 
 _CORNER_BITS_CACHE = {}
