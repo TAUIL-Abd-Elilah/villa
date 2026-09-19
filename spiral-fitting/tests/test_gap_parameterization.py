@@ -1,5 +1,6 @@
 import math
 
+import pytest
 import torch
 
 from checkpoint_migrations import (
@@ -156,3 +157,16 @@ def test_capacity_growth_appends_identity_latents_and_zero_moments():
                                    checkpoint["optimiser"]["state"][20][name])
         assert torch.count_nonzero(moment[..., old_width:]) == 0
     assert expanded["cfg"]["model_gap_expander_capacity_windings"] == 7
+
+
+def test_spline_checkpoint_capacity_growth_is_refused_without_mutation():
+    checkpoint = migrate_legacy_gap_parameterization(_legacy_checkpoint())
+    checkpoint['cfg']['model_gap_expander_interpolation'] = 'bspline'
+    state = checkpoint['spiral_and_transform']
+    before = {key: value.clone() for key, value in state.items()}
+    assert expand_gap_checkpoint_capacity(checkpoint, 5) is checkpoint
+    with pytest.raises(ValueError, match='capacity expansion.*bspline'):
+        expand_gap_checkpoint_capacity(checkpoint, 7)
+    assert checkpoint['cfg']['model_gap_expander_capacity_windings'] == 5
+    for key in before:
+        torch.testing.assert_close(state[key], before[key], atol=0, rtol=0)

@@ -260,6 +260,21 @@ class CheckpointPreflightTests(unittest.TestCase):
         self.assertIn("dtype",
                       _inspect(_checkpoint(spiral_and_transform=retyped)).message())
 
+    def test_gap_interpolant_must_match_even_when_old_checkpoint_omits_it(self):
+        key = "model_gap_expander_interpolation"
+        context = _live_context()
+        old_cfg = durable_config(CONFIG)
+        old_cfg.pop(key)
+        self.assertTrue(_inspect(_checkpoint(cfg=old_cfg), context).accepted)
+        context.config[key] = "bspline"
+        for cfg in (old_cfg, durable_config(CONFIG)):
+            verdict = _inspect(_checkpoint(cfg=cfg), context)
+            self.assertFalse(verdict.accepted)
+            self.assertIn(key, verdict.message())
+        spline_cfg = {**durable_config(CONFIG), key: "bspline"}
+        self.assertTrue(_inspect(_checkpoint(cfg=spline_cfg), context).accepted)
+        self.assertFalse(_inspect(_checkpoint(cfg=spline_cfg)).accepted)
+
     def test_optimiser_and_scheduler_compatibility_invariants(self):
         fewer = {"state": {}, "param_groups": [{"params": [0, 1, 2]}]}
         verdict = _inspect(_checkpoint(optimiser=fewer))

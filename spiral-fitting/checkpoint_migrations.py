@@ -191,7 +191,11 @@ def _capacity_geometry(config: Mapping, capacity: int):
 
 
 def expand_gap_checkpoint_capacity(checkpoint, target_capacity: int):
-    """Append identity latents and zero Adam moments up to ``target_capacity``."""
+    """Append bilinear identity latents and moments up to ``target_capacity``.
+
+    B-spline growth is not a supported migration: changing the align-corners
+    lattice extent and outer stencil changes the represented spline.
+    """
     if not isinstance(checkpoint, Mapping):
         return checkpoint
     model_state = checkpoint.get("spiral_and_transform")
@@ -210,6 +214,13 @@ def expand_gap_checkpoint_capacity(checkpoint, target_capacity: int):
             f"{target_capacity} without discarding learned windings")
     if target_capacity == saved_capacity:
         return checkpoint
+    interpolation = _config_value(
+        config, 'model_gap_expander_interpolation', 'bilinear')
+    if interpolation != 'bilinear':
+        raise ValueError(
+            f"gap-expander capacity expansion is not supported for "
+            f"{interpolation} interpolation; load the saved capacity or "
+            "start a fresh fit")
 
     _, new_indices_cpu = _capacity_geometry(config, target_capacity)
     old_width = old_logits.shape[-1]

@@ -20,6 +20,7 @@ def filter_known_config_keys(values, allowed, *, label, warn=print):
 _ENUMS = {
     "model_flow_integration_solver": ["rk4"],
     "model_flow_field_type": ["cartesian", "cylindrical", "bspline", "bspline_cylindrical"],
+    "model_gap_expander_interpolation": ["bilinear", "bspline"],
     "track_crossing_mode": ["count", "track_walk"],
     "track_radius_target": ["mean", "median"],
     "dense_spacing_mode": ["phase", "grad_mag", "winding_model"],
@@ -159,6 +160,7 @@ BACKFILLABLE_CONFIG_DEFAULTS.update({
     "model_gap_expander_capacity_windings": DEFAULT_GAP_EXPANDER_CAPACITY,
     "model_gap_expander_min_gap": 1.0,
     "model_gap_expander_softplus_bias": 4.0,
+    "model_gap_expander_interpolation": "bilinear",
     # Fiber classification thresholds for radial offsets and patch-side linking.
     "pcl_vertical_fiber_min_z_fraction": 0.8,
     "pcl_vertical_fiber_min_auto_certainty": 0.5,
@@ -237,6 +239,10 @@ _PCL_LINK_DESCRIPTIONS = {
 }
 
 _GAP_EXPANDER_DESCRIPTIONS = {
+    "model_gap_expander_interpolation": (
+        "Interpolate latent gap coefficients with bilinear sampling or a "
+        "uniform cubic B-spline before the lower-bounded gap map. B-spline "
+        "uses the eager Torch reference path and changes checkpoint semantics."),
     "model_gap_expander_num_windings": (
         "Legacy/fallback physical winding-count estimate used by exporters; "
         "it does not allocate the gap lattice."),
@@ -329,6 +335,7 @@ CHECKPOINT_MODEL_SHAPE_KEYS = (
     "model_flow_field_type", "model_gap_expander_logit_resolution",
     "model_gap_expander_capacity_windings",
     "model_gap_expander_lr_scale",
+    "model_gap_expander_interpolation",
     "model_gap_expander_min_gap", "model_gap_expander_softplus_bias",
     "model_initial_dr_per_winding", "model_linear_z_resolution",
 )
@@ -365,6 +372,7 @@ MODEL_STAGE_KEYS = frozenset({
     "model_flow_field_type",
     "model_flow_field_direct_lr",
     "model_gap_expander_logit_resolution",
+    "model_gap_expander_interpolation",
     "model_gap_expander_capacity_windings",
     "model_gap_expander_min_gap",
     "model_gap_expander_softplus_bias",
@@ -382,6 +390,7 @@ _MODEL_STRUCTURE_KEYS = frozenset({
     "model_flow_field_type",
     "model_flow_field_direct_lr",
     "model_gap_expander_logit_resolution",
+    "model_gap_expander_interpolation",
     "model_gap_expander_capacity_windings",
     "model_gap_expander_lr_scale",
     "model_gap_expander_min_gap",
@@ -620,6 +629,7 @@ class Config:
         self.model_flow_field_low_res_lr_scale = 1.0
         self.model_flow_field_direct_lr = True
         self.model_gap_expander_logit_resolution = 24
+        self.model_gap_expander_interpolation = "bilinear"
         # The physical winding estimate and the allocated transform capacity
         # are deliberately separate.  shell_outer_winding_idx is the active
         # hypothesis; num_windings remains the legacy/fallback physical

@@ -160,6 +160,53 @@ layouts, pass `--umbilicus /path/to/umbilicus.json`. Use `--lasagna-dir` if
 the Lasagna repository is not in its standard sibling or `~/villa` location.
 An existing output path is never overwritten.
 
+## Optional cubic gap interpolation
+
+`model_gap_expander_interpolation` defaults to `bilinear`, preserving existing
+fits. Set it to `bspline` in a fresh fit's configuration (or
+`FIT_SPIRAL_CONFIG_OVERRIDES`) to sample the latent gap coefficients with a
+uniform tensor-product cubic B-spline before applying the lower-bounded
+softplus gap map. `model_gap_expander_logit_resolution` still controls the
+lattice spacing. This is separate from the B-spline velocity-field options.
+
+The lattice retains its concatenated spiral coordinate and existing
+align-corners placement. Successive turns share the same coordinate at their
+theta seam. Z and the outer edge replicate border coefficients; the inner
+edge uses an odd ghost coefficient around the pinned zero column so the
+sampled origin remains exactly zero. This preserves the first gap and the
+continuity of cumulative winding radii. The latent spline is C2 at interior
+lattice knots; the clamped domain edges and varying angular pitch between
+turns do not promise C2 continuity in physical coordinates.
+
+The optional sampler is an eager Torch reference on CPU or CUDA and does not
+use the bilinear Triton gap kernels. It materialises a 4-by-4 stencil; no
+performance, memory, or fitting-quality improvement is established. The
+setting is checkpoint-durable and requires a model rebuild. Checkpoints
+without it mean `bilinear`, and loading coefficients with a different
+interpolant is rejected even though the tensor shapes match. Start fresh to
+compare interpolants; no coefficient-conversion migration is provided.
+Growing a saved B-spline checkpoint's winding capacity is also rejected:
+that would change the represented spline's boundary and lattice placement.
+Preview geometry identities include the interpolant; historical bilinear
+identities remain unchanged.
+
+Run the numerical and checkpoint checks with an existing environment:
+
+```sh
+AGENTS_AGENT_MODE=1 CUDA_VISIBLE_DEVICES="" PYTHONPATH=spiral-fitting python -m pytest -q \
+  spiral-fitting/tests/test_gap_bspline.py \
+  spiral-fitting/tests/test_gap_parameterization.py \
+  spiral-fitting/tests/test_config.py \
+  spiral-fitting/tests/test_checkpoint_load.py \
+  spiral-fitting/tests/test_preview_restore.py::ModelStateDigestTests \
+  spiral-fitting/tests/test_bspline_flow.py \
+  spiral-fitting/tests/test_bspline_cylindrical_flow.py
+```
+
+These CPU checks validate the basis against SciPy, boundary constraints,
+gradients, identity/inversion, default equivalence, and checkpoint semantics.
+Real-data matched fits are still required to evaluate usefulness.
+
 ## Flow stages
 
 `model_num_flow_stages` sets how many stationary velocity fields the flow

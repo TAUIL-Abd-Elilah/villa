@@ -14,6 +14,7 @@ import tempfile
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import torch
@@ -22,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from checkpoint_io import model_state_sha256
+from fit_spiral import FitContext
 from fit_session import SessionState, SpiralInputPaths
 from lasagna_publish import PublishedPreview
 from preview_index import PublishedPreviewIndex
@@ -49,6 +51,23 @@ def _frozen_epoch(value):
 
 
 class ModelStateDigestTests(unittest.TestCase):
+    def test_gap_interpolation_salts_geometry_but_preserves_legacy_identity(self):
+        state = {'w': torch.tensor([.25, -2.], dtype=torch.float32)}
+        legacy = model_state_sha256(state, (), 0, 10)
+        # Captured before adding the interpolant to the digest contract.
+        self.assertEqual(
+            legacy, 'a4526dc90c046b7ec4aa0b0a6c764b39f743afb76db3bea453ada6ea52eac2e1')
+        self.assertEqual(legacy, model_state_sha256(
+            state, (), 0, 10, gap_interpolation='bilinear'))
+        spline = model_state_sha256(
+            state, (), 0, 10, gap_interpolation='bspline')
+        self.assertNotEqual(legacy, spline)
+        model = SimpleNamespace(state_dict=lambda: state, cfg={})
+        context = SimpleNamespace(spiral_and_transform=model, z_begin=0, z_end=10)
+        self.assertEqual(FitContext.model_state_digest(context), legacy)
+        model.cfg['model_gap_expander_interpolation'] = 'bspline'
+        self.assertEqual(FitContext.model_state_digest(context), spline)
+
     def test_digest_is_content_only_and_covers_what_places_the_surface(self):
         state = {"a": torch.arange(6.0).reshape(2, 3), "b": torch.tensor(True)}
         clone = {key: value.clone() for key, value in state.items()}

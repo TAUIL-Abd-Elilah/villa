@@ -3924,14 +3924,18 @@ class FitContext:
 
         Stamped into every checkpoint and every raw preview manifest. Two
         artifacts carrying the same digest were produced from byte-identical
-        live parameters, frozen-epoch stack and run window, so the host may
+        live parameters, gap interpolant, frozen-epoch stack and run window,
+        so the host may
         re-show the flattened preview it already holds for a checkpoint it is
         asked to load instead of flattening the same surface again.
         """
         return model_state_sha256(
             self.spiral_and_transform.state_dict(),
             getattr(self, 'frozen_epochs', None) or (),
-            getattr(self, 'z_begin', None), getattr(self, 'z_end', None))
+            getattr(self, 'z_begin', None), getattr(self, 'z_end', None),
+            gap_interpolation=getattr(
+                self.spiral_and_transform, 'cfg', {}).get(
+                    'model_gap_expander_interpolation', 'bilinear'))
 
     def _checkpoint_payload(self, completed_iterations):
         return {
@@ -4037,8 +4041,9 @@ class FitContext:
             return CheckpointVerdict(
                 False, ('checkpoint is not a state dictionary',), source=source)
         try:
-            # Capacity growth is prefix-preserving: inspect the expanded copy
-            # without mutating the caller's checkpoint. load_checkpoint()
+            # Bilinear capacity growth retains the coefficient prefix. The
+            # helper refuses unvalidated B-spline growth. Inspect the copy
+            # without mutating the caller's checkpoint; load_checkpoint()
             # performs the same migration only after this verdict succeeds.
             checkpoint = expand_gap_checkpoint_capacity(
                 migrate_legacy_gap_parameterization(merge_flow_stage_lattices(checkpoint)),
@@ -4140,6 +4145,16 @@ class FitContext:
         # --- structural configuration -------------------------------------
         checkpoint_cfg = checkpoint.get('cfg')
         if isinstance(checkpoint_cfg, Mapping):
+            # The tensor layout is shared by both gap interpolants, but the
+            # same coefficients describe different surfaces. Historical
+            # checkpoints unambiguously used bilinear sampling; they must
+            # not silently load into a B-spline model with matching shapes.
+            checkpoint_cfg = {
+                'model_gap_expander_interpolation':
+                    BACKFILLABLE_CONFIG_DEFAULTS[
+                        'model_gap_expander_interpolation'],
+                **checkpoint_cfg,
+            }
             # Checkpoints store the durable subset of the schema, so the key
             # set compares against that subset. z_begin/z_end joined the schema
             # after many checkpoints were written and are owned by the session

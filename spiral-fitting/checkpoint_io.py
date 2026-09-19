@@ -47,12 +47,13 @@ def _feed_state_dict(digest, prefix, state_dict):
 
 
 def model_state_sha256(state_dict, frozen_epochs=(), z_begin=None,
-                       z_end=None):
+                       z_end=None, *, gap_interpolation='bilinear'):
     """Content digest of everything that places the fitted surface.
 
     The live parameters alone do not determine the surface a fit publishes:
     after a constraint-bake reset the surface is pulled back through the
-    frozen-epoch stack, and the run window bounds it. A checkpoint and a
+    frozen-epoch stack, the gap interpolant interprets its coefficients, and
+    the run window bounds it. A checkpoint and a
     preview export that agree on this digest were produced from the same
     surface, which is what lets a service re-show the preview it already
     flattened for a checkpoint instead of flattening it again.
@@ -62,6 +63,11 @@ def model_state_sha256(state_dict, frozen_epochs=(), z_begin=None,
 
     digest = hashlib.sha256()
     digest.update(f"z_window|{z_begin!r}|{z_end!r}\n".encode("utf-8"))
+    # Missing mode on historical models means bilinear. Leave their digest
+    # bytes unchanged so existing cached previews still match those models.
+    if gap_interpolation != 'bilinear':
+        digest.update(
+            f"gap_interpolation|{gap_interpolation!r}\n".encode("utf-8"))
     _feed_state_dict(digest, "live/", state_dict)
     for index, snapshot in enumerate(frozen_epochs or ()):
         prefix = f"frozen/{index}/"

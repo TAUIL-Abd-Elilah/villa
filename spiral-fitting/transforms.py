@@ -23,6 +23,7 @@ from gap_parameterization import (
     lower_bounded_dr,
     lower_bounded_gap,
 )
+from gap_interpolation import sample_gap_logits_bspline
 from geom_utils import expm_2x2, interp1d
 from sample_spiral import get_bounding_windings, get_theta_and_radii
 
@@ -98,9 +99,12 @@ class GapExpandingTransform(pyro.distributions.transforms.Transform):
     def __init__(self, params, dr_per_winding, min_z, max_z,
                  gap_expander_lr_scale, min_gap=1.0, softplus_bias=4.0,
                  softplus_scale=None, truncate_frac=None, event_dim=0,
-                 cache_size=0):
+                 cache_size=0, interpolation='bilinear'):
         super().__init__(cache_size=cache_size)
         self.params = params
+        if interpolation not in ('bilinear', 'bspline'):
+            raise ValueError(f'Unknown gap interpolation: {interpolation!r}')
+        self.interpolation = interpolation
         self.dr_per_winding = dr_per_winding
         self.min_z = min_z
         self.max_z = max_z
@@ -159,8 +163,10 @@ class GapExpandingTransform(pyro.distributions.transforms.Transform):
         return consts
 
     def _use_triton(self, input_zyx, dr):
-        return isinstance(dr, torch.Tensor) and gap_triton.gap_triton_available(
-            input_zyx, self.params.logits, dr)
+        return (self.interpolation == 'bilinear'
+                and isinstance(dr, torch.Tensor)
+                and gap_triton.gap_triton_available(
+                    input_zyx, self.params.logits, dr))
 
     def get_transformed_winding_radii(self, theta, z):
         # This returns the sequence of winding radii (true, not shifted) for the radials given by theta and z
@@ -183,7 +189,7 @@ class GapExpandingTransform(pyro.distributions.transforms.Transform):
         The returned values include ``gap_expander_lr_scale`` but deliberately
         exclude the calibrated softplus scale. Keeping this interpolation in
         one method makes the minimum-gap barrier use exactly the same pinning,
-        grid coordinates, and bilinear sampling as the forward transform.
+        grid coordinates, and sampling as the forward transform.
         """
         num_windings = len(self.params.num_by_winding)
         winding_first_logit_idx = self.params.winding_first_logit_idx
@@ -191,6 +197,11 @@ class GapExpandingTransform(pyro.distributions.transforms.Transform):
         winding_coords = torch.lerp(
             winding_first_logit_idx[:-1], winding_first_logit_idx[1:],
             theta_normalised[..., None])
+        if self.interpolation == 'bspline':
+            return sample_gap_logits_bspline(
+                self._get_pinned_scaled_logits()[0, 0],
+                ((z - self.min_z) / (self.max_z - self.min_z))[..., None],
+                winding_coords / winding_first_logit_idx[-1])
         winding_coords_normalised = (
             winding_coords / winding_first_logit_idx[-1] * 2 - 1)
         z_normalised = (z - self.min_z) / (self.max_z - self.min_z) * 2 - 1
@@ -542,6 +553,8 @@ class SpiralAndTransform(nn.Module):
             self.gap_softplus_bias,
             self.gap_softplus_scale,
             truncate_frac,
+            interpolation=self.cfg.get(
+                'model_gap_expander_interpolation', 'bilinear'),
         )
         if shared is not None:
             gap_expander._pinned_scaled_logits = shared[2]
